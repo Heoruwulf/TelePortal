@@ -20,7 +20,7 @@ By participating in this project, you agree to maintain a professional and respe
 ### Pull Requests
 
 1. **Fork the repository** and create your branch from `main`.
-2. **Follow the Engineering Standards** defined in the project (see `GEMINI.md`).
+2. **Follow the Engineering Standards** defined in the project.
 3. **Write Tests**: Ensure your changes are covered by unit tests.
 4. **Pass QA**: Run `make qa` to ensure linting and type-checking pass.
 5. **Update Documentation**: If you're adding a feature, update the relevant documentation in `docs/`.
