@@ -21,8 +21,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
 	"github.com/emiago/sipgo/sip"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"go.uber.org/zap"
 )
 

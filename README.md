@@ -159,13 +159,13 @@ All core HTTP endpoints are cleanly versioned under `/v1`.
 If you are building an AI agent or a monitoring dashboard in Go, you can avoid redefining JSON schemas by importing them directly. The included high-performance client handles the WebSocket lifecycle and provides simple methods for audio and DTMF.
 
 ```bash
-go get github.com/Heoruwulf/TelePortal
+go get github.com/heoruwulf/teleportal
 ```
 
 ```go
 import (
-    tpapi "github.com/Heoruwulf/TelePortal/pkg/api"
-    tpclient "github.com/Heoruwulf/TelePortal/pkg/client"
+    tpapi "github.com/heoruwulf/teleportal/pkg/api"
+    tpclient "github.com/heoruwulf/teleportal/pkg/client"
 )
 
 // Example usage:

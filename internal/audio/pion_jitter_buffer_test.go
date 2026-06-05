@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
-	"github.com/Heoruwulf/TelePortal/internal/rtp/rtpdefs"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
+	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
 	"github.com/pion/rtp"
 	"go.uber.org/zap"
 )

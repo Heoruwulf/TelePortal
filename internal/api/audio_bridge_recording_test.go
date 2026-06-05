@@ -25,10 +25,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
-	"github.com/Heoruwulf/TelePortal/internal/rtp/rtpdefs"
 	"github.com/go-audio/wav"
+	"github.com/heoruwulf/teleportal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
+	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
 	"go.uber.org/zap"
 )
 

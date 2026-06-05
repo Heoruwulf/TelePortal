@@ -27,9 +27,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/app"
-	"github.com/Heoruwulf/TelePortal/internal/platform/config"
-	"github.com/Heoruwulf/TelePortal/internal/platform/logging"
+	"github.com/heoruwulf/teleportal/internal/app"
+	"github.com/heoruwulf/teleportal/internal/platform/config"
+	"github.com/heoruwulf/teleportal/internal/platform/logging"
 	"go.uber.org/zap"
 )
 

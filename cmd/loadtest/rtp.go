@@ -25,9 +25,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
-	"github.com/Heoruwulf/TelePortal/internal/rtp"
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	"github.com/heoruwulf/teleportal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/rtp"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 	pionrtp "github.com/pion/rtp"
 	"golang.org/x/sync/errgroup"
 )

@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 	"go.uber.org/zap"
 )
 

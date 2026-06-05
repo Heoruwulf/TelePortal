@@ -21,8 +21,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
-	"github.com/Heoruwulf/TelePortal/internal/platform/config"
+	"github.com/heoruwulf/teleportal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/platform/config"
 	pionsip "github.com/pion/sdp/v3"
 )
 

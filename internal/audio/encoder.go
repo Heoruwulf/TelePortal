@@ -20,7 +20,7 @@ package audio
 import (
 	"fmt"
 
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 )
 
 // EncodeL16ToPCMU converts L16 LE to PCMU using a lookup table.

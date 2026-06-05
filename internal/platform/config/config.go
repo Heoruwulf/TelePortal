@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/audio"
 )
 
 // LogConfig contains configuration for the logger.

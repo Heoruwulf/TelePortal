@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/audio"
 )
 
 func TestGenerateAnswer(t *testing.T) {

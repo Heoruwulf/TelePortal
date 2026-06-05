@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/platform/config"
+	"github.com/heoruwulf/teleportal/internal/platform/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

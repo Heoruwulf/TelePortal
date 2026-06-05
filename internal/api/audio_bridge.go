@@ -24,12 +24,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
-	"github.com/Heoruwulf/TelePortal/internal/rtp/rtpdefs"
-	pkgapi "github.com/Heoruwulf/TelePortal/pkg/api"
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
 	"github.com/gorilla/websocket"
+	"github.com/heoruwulf/teleportal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
+	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
+	pkgapi "github.com/heoruwulf/teleportal/pkg/api"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )

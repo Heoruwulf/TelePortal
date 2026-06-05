@@ -26,9 +26,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/pkg/api"
-	"github.com/Heoruwulf/TelePortal/pkg/audio"
 	"github.com/gorilla/websocket"
+	"github.com/heoruwulf/teleportal/pkg/api"
+	"github.com/heoruwulf/teleportal/pkg/audio"
 )
 
 var upgrader = websocket.Upgrader{}

@@ -25,13 +25,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
-	"github.com/Heoruwulf/TelePortal/internal/call"
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
-	"github.com/Heoruwulf/TelePortal/internal/rtp/rtpdefs"
-	"github.com/Heoruwulf/TelePortal/pkg/api"
 	"github.com/emiago/sipgo/sip"
 	"github.com/gorilla/websocket"
+	"github.com/heoruwulf/teleportal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/call"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
+	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
+	"github.com/heoruwulf/teleportal/pkg/api"
 	"go.uber.org/zap"
 )
 

@@ -28,10 +28,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/pkg/api"
-	"github.com/Heoruwulf/TelePortal/pkg/audio"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
+	"github.com/heoruwulf/teleportal/pkg/api"
+	"github.com/heoruwulf/teleportal/pkg/audio"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

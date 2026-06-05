@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Heoruwulf/TelePortal/pkg/audio"
-	"github.com/Heoruwulf/TelePortal/pkg/client"
+	"github.com/heoruwulf/teleportal/pkg/audio"
+	"github.com/heoruwulf/teleportal/pkg/client"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -26,9 +26,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
-	"github.com/Heoruwulf/TelePortal/internal/rtp/rtpdefs"
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	"github.com/heoruwulf/teleportal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 	"go.uber.org/zap"
 )
 

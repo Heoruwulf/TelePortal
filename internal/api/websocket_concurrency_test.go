@@ -23,11 +23,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Heoruwulf/TelePortal/internal/call"
-	"github.com/Heoruwulf/TelePortal/internal/platform/config"
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/heoruwulf/teleportal/internal/call"
+	"github.com/heoruwulf/teleportal/internal/platform/config"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 )

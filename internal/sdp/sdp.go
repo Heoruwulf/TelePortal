@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/audio"
 	"github.com/pion/sdp/v3"
 )
 

@@ -20,7 +20,7 @@ package rtp
 import (
 	"testing"
 
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 )
 
 func TestDTMFGenerator(t *testing.T) {

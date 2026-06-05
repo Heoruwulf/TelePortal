@@ -21,7 +21,7 @@ import (
 	"context"
 	"time"
 
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 )
 
 // Packetizer accumulates audio data and emits it in fixed-size chunks.

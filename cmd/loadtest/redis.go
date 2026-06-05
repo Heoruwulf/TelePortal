@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/Heoruwulf/TelePortal/pkg/api"
+	"github.com/heoruwulf/teleportal/pkg/api"
 	"github.com/redis/go-redis/v9"
 )
 

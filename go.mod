@@ -1,4 +1,4 @@
-module github.com/Heoruwulf/TelePortal
+module github.com/heoruwulf/teleportal
 
 go 1.26.1
 

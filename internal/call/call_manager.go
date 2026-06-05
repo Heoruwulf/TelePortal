@@ -22,7 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"go.uber.org/zap"
 )
 

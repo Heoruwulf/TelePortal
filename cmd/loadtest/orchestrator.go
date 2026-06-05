@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
 	"github.com/emiago/sipgo"
 	"github.com/go-audio/wav"
+	"github.com/heoruwulf/teleportal/internal/audio"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -21,7 +21,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Heoruwulf/TelePortal/internal/audio"
+	"github.com/heoruwulf/teleportal/internal/audio"
 )
 
 func TestLoadCoreConfig_WebSocketCodec(t *testing.T) {

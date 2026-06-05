@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/call"
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
 	"github.com/google/uuid"
+	"github.com/heoruwulf/teleportal/internal/call"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"go.uber.org/zap"
 )
 

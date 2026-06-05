@@ -21,7 +21,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 )
 
 type CodecName string

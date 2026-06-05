@@ -24,9 +24,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Heoruwulf/TelePortal/internal/platform/metrics"
-	"github.com/Heoruwulf/TelePortal/internal/rtp/rtpdefs"
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
+	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"go.uber.org/zap"
 )

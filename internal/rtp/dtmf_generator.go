@@ -21,7 +21,7 @@ import (
 	"encoding/binary"
 	"strings"
 
-	audiopool "github.com/Heoruwulf/TelePortal/pkg/audio"
+	audiopool "github.com/heoruwulf/teleportal/pkg/audio"
 )
 
 // DTMFGenerator creates RFC 2833 (RFC 4733) RTP payloads for DTMF events.
