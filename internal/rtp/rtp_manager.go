@@ -79,7 +79,11 @@ func (m *RTPManager) CreateListener(listenIP net.IP) (net.PacketConn, error) {
 			_ = udpConn.SetWriteBuffer(1024 * 1024 * 2) // 2MB send buffer
 		}
 
-		m.log.Debug("Successfully created RTP listener", zap.String("addr", conn.LocalAddr().String()))
+		localAddr := ""
+		if conn.LocalAddr() != nil {
+			localAddr = conn.LocalAddr().String()
+		}
+		m.log.Debug("Successfully created RTP listener", zap.String("addr", localAddr))
 
 		m.ports[port] = true
 		return conn, nil

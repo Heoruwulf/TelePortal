@@ -87,19 +87,12 @@ func (p *Packetizer) Run(ctx context.Context) {
 				// We don't have enough room, drop what doesn't fit or handle overflow.
 				// For real-time audio, dropping the oldest would be better, but simpler is to drop the new if we are full.
 				// However, our ringBuf is capacity*10, so this should be rare.
-				if capacity-count > 0 {
-					n = capacity - count
-				} else {
-					n = 0
-				}
+				n = max(capacity-count, 0)
 			}
 
 			if n > 0 {
 				// Copy data to tail, handling wrap around
-				firstPart := capacity - tail
-				if firstPart > n {
-					firstPart = n
-				}
+				firstPart := min(capacity-tail, n)
 				copy(ringBuf[tail:tail+firstPart], data[:firstPart])
 				if n > firstPart {
 					copy(ringBuf[0:n-firstPart], data[firstPart:n])
@@ -112,10 +105,7 @@ func (p *Packetizer) Run(ctx context.Context) {
 			chunk := audiopool.GetBuffer(p.bytesPerTick)
 			if count >= p.bytesPerTick {
 				// Read from ring buffer, handling wrap around
-				firstPart := capacity - head
-				if firstPart > p.bytesPerTick {
-					firstPart = p.bytesPerTick
-				}
+				firstPart := min(capacity-head, p.bytesPerTick)
 				copy(chunk[:firstPart], ringBuf[head:head+firstPart])
 				if p.bytesPerTick > firstPart {
 					copy(chunk[firstPart:p.bytesPerTick], ringBuf[0:p.bytesPerTick-firstPart])

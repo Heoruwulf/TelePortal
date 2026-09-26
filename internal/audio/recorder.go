@@ -63,7 +63,7 @@ func NewStereoRecorder(ctx context.Context, log *zap.Logger, recordingPath, call
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(recordingPath, 0755); err != nil {
+	if err := os.MkdirAll(recordingPath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create recording directory: %w", err)
 	}
 
@@ -99,10 +99,12 @@ func (r *StereoRecorder) PushLeft(data []byte) {
 	samples := bToI(data)
 	select {
 	case r.leftCh <- samples:
+		r.log.Debug("PushLeft: queued samples", zap.Int("count", len(samples)))
 	case <-r.ctx.Done():
 		audiopool.PutIntBuffer(samples)
 	default:
 		// Drop samples if the recorder is falling behind
+		r.log.Warn("PushLeft: dropping samples, queue full")
 		audiopool.PutIntBuffer(samples)
 	}
 }
@@ -115,10 +117,12 @@ func (r *StereoRecorder) PushRight(data []byte) {
 	samples := bToI(data)
 	select {
 	case r.rightCh <- samples:
+		r.log.Debug("PushRight: queued samples", zap.Int("count", len(samples)))
 	case <-r.ctx.Done():
 		audiopool.PutIntBuffer(samples)
 	default:
 		// Drop samples if the recorder is falling behind
+		r.log.Warn("PushRight: dropping samples, queue full")
 		audiopool.PutIntBuffer(samples)
 	}
 }
@@ -201,15 +205,13 @@ func (r *StereoRecorder) run() {
 
 func (r *StereoRecorder) process(w *FastWavWriter) {
 	// Interleave samples as long as we have data for both channels
-	minLen := len(r.leftBuf)
-	if len(r.rightBuf) < minLen {
-		minLen = len(r.rightBuf)
-	}
+	minLen := min(len(r.rightBuf), len(r.leftBuf))
 
 	if minLen == 0 {
 		return
 	}
 
+	r.log.Debug("process: writing interleaved samples", zap.Int("pairs", minLen))
 	r.writeInterleaved(w, minLen)
 }
 
@@ -222,7 +224,7 @@ func (r *StereoRecorder) handleSilence(w *FastWavWriter) {
 	if len(r.leftBuf)-len(r.rightBuf) > threshold {
 		count := len(r.leftBuf) - len(r.rightBuf)
 		padding := audiopool.GetIntBuffer(count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			padding[i] = 0
 		}
 		r.rightBuf = append(r.rightBuf, padding...)
@@ -231,7 +233,7 @@ func (r *StereoRecorder) handleSilence(w *FastWavWriter) {
 	} else if len(r.rightBuf)-len(r.leftBuf) > threshold {
 		count := len(r.rightBuf) - len(r.leftBuf)
 		padding := audiopool.GetIntBuffer(count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			padding[i] = 0
 		}
 		r.leftBuf = append(r.leftBuf, padding...)
@@ -242,19 +244,19 @@ func (r *StereoRecorder) handleSilence(w *FastWavWriter) {
 
 func (r *StereoRecorder) flush(w *FastWavWriter) {
 	// Flush remaining samples by padding the shorter buffer with zeros
-	maxLen := len(r.leftBuf)
-	if len(r.rightBuf) > maxLen {
-		maxLen = len(r.rightBuf)
-	}
+	maxLen := max(len(r.rightBuf), len(r.leftBuf))
 
 	if maxLen == 0 {
+		r.log.Debug("flush: no remaining samples to flush")
 		return
 	}
+
+	r.log.Debug("flush: padding and writing remaining samples", zap.Int("samples", maxLen))
 
 	if len(r.leftBuf) < maxLen {
 		count := maxLen - len(r.leftBuf)
 		padding := audiopool.GetIntBuffer(count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			padding[i] = 0
 		}
 		r.leftBuf = append(r.leftBuf, padding...)
@@ -263,7 +265,7 @@ func (r *StereoRecorder) flush(w *FastWavWriter) {
 	if len(r.rightBuf) < maxLen {
 		count := maxLen - len(r.rightBuf)
 		padding := audiopool.GetIntBuffer(count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			padding[i] = 0
 		}
 		r.rightBuf = append(r.rightBuf, padding...)
@@ -277,7 +279,7 @@ func (r *StereoRecorder) writeInterleaved(w *FastWavWriter, count int) {
 	interleaved := audiopool.GetIntBuffer(count * 2)
 	defer audiopool.PutIntBuffer(interleaved)
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		interleaved[i*2] = r.leftBuf[i]
 		interleaved[i*2+1] = r.rightBuf[i]
 	}
@@ -304,8 +306,11 @@ func (r *StereoRecorder) writeInterleaved(w *FastWavWriter, count int) {
 
 // bToI converts L16 LE bytes to int samples.
 func bToI(data []byte) []int {
+	if len(data) == 0 {
+		return nil
+	}
 	samples := audiopool.GetIntBuffer(len(data) / 2)
-	for i := 0; i < len(samples); i++ {
+	for i := range samples {
 		samples[i] = int(int16(binary.LittleEndian.Uint16(data[i*2:])))
 	}
 	return samples

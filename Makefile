@@ -1,39 +1,58 @@
 # TelePortal Makefile
 
+SHELL := /usr/bin/env bash
+.SHELLFLAGS := -eu -o pipefail -c
+.DEFAULT_GOAL := help
+
+export CGO_ENABLED ?= 0
+
 # Variables
-BINARY_NAME=teleportal
-LOADTEST_BINARY_NAME=loadtest
-BUILD_DIR=build
-CMD_PATH=./cmd/teleportal/main.go
-LOADTEST_CMD_PATH=./cmd/loadtest/main.go
-ENV_FILE=.env
+BINARY_NAME          ?= teleportal
+LOADTEST_BINARY_NAME ?= loadtest
+BUILD_DIR            ?= build
+CMD_PATH             ?= ./cmd/teleportal
+LOADTEST_CMD_PATH    ?= ./cmd/loadtest
+ENV_FILE             ?= .env
 
-# Go commands
-GOCMD=go
-GOBUILD=$(GOCMD) build
-GOTEST=$(GOCMD) test
-GOVET=$(GOCMD) vet
-GOFMT=$(GOCMD) fmt
-STATICCHECK=staticcheck
-FIELDALIGNMENT=fieldalignment
+# Go toolchain
+GO   ?= go
+PKGS ?= ./...
+CI   ?=
 
-.PHONY: all build build-loadtest test run qa clean help fmt vet fieldalignment staticcheck
+.PHONY: all help install-tools build build-loadtest build-all test run qa fix fmt vet lint nilaway arch-go loc fieldalignment vuln clean
 
 all: help
+
+help: ## Show this help message
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | expand -t24
+
+install-tools: ## Download deps and build the pinned go tools into the module cache
+	$(GO) mod download
+	$(GO) tool golangci-lint version
+	$(GO) tool gofumpt --version
+	$(GO) tool arch-go --version
+	$(GO) tool govulncheck -version >/dev/null 2>&1 || true
+	$(GO) tool nilaway -V=full >/dev/null 2>&1 || true
+	$(GO) tool fieldalignment -V=full >/dev/null 2>&1 || true
+
+build-all: build build-loadtest ## Build both the core service and the loadtest tool
 
 build: ## Build the core service binary
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_PATH)
+	$(GO) build -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_PATH)
 
 build-loadtest: ## Build the standalone load test tool
 	@echo "Building $(LOADTEST_BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -o $(BUILD_DIR)/$(LOADTEST_BINARY_NAME) ./cmd/loadtest
+	$(GO) build -o $(BUILD_DIR)/$(LOADTEST_BINARY_NAME) $(LOADTEST_CMD_PATH)
 
 test: ## Run all tests using the standard library testing package
 	@echo "Running tests..."
-	$(GOTEST) -v ./...
+	$(GO) test -v $(PKGS)
 
 run: build ## Build and run the service, loading variables from .env
 	@stty -echoctl 2>/dev/null || true
@@ -47,33 +66,44 @@ run: build ## Build and run the service, loading variables from .env
 	fi
 	@stty echoctl 2>/dev/null || true
 
-qa: fmt vet fieldalignment staticcheck ## Run quality assurance tools (fmt, vet, fieldalignment, staticcheck)
-	@echo "QA checks completed."
+qa: fix fmt vet lint nilaway arch-go loc fieldalignment ## Full static-analysis gate: fix -> fmt -> vet -> lint -> nilaway -> arch-go -> loc -> fieldalignment
+	@echo "QA checks completed successfully."
 
-fmt: ## Run go fmt on all packages
-	@echo "Running go fmt..."
-	$(GOFMT) ./...
+fix: ## go fix modernizers: rewrite locally, fail in CI
+ifeq ($(CI),)
+	$(GO) fix $(PKGS)
+else
+	$(GO) fix -diff $(PKGS)
+endif
 
-vet: ## Run go vet on all packages
-	@echo "Running go vet..."
-	$(GOVET) ./...
+fmt: ## gofumpt: rewrite locally, fail in CI
+ifeq ($(CI),)
+	$(GO) tool gofumpt -w .
+else
+	@out=$$($(GO) tool gofumpt -l .); if [ -n "$$out" ]; then echo "unformatted:"; echo "$$out"; exit 1; fi
+endif
 
-fieldalignment: ## Run fieldalignment to check struct layouts
-	@echo "Running fieldalignment..."
-	@which $(FIELDALIGNMENT) > /dev/null || (echo "fieldalignment not found. Install with: go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest" && exit 1)
-	$(FIELDALIGNMENT) ./...
+vet: ## go vet
+	$(GO) vet $(PKGS)
 
-staticcheck: ## Run staticcheck (requires installation: go install honnef.co/go/tools/cmd/staticcheck@latest)
-	@echo "Running staticcheck..."
-	@which $(STATICCHECK) > /dev/null || (echo "staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@latest" && exit 1)
-	$(STATICCHECK) ./...
+lint: ## golangci-lint
+	$(GO) tool golangci-lint run $(PKGS)
+
+nilaway: ## NilAway nil-panic analysis
+	$(GO) tool nilaway -exclude-test-files $(PKGS)
+
+arch-go: ## architecture rules from arch-go.yml
+	$(GO) tool arch-go
+
+fieldalignment: ## struct field ordering
+	$(GO) tool fieldalignment $(PKGS)
+
+loc: ## Fail on any Go file over 1500 lines of code, comments and blanks excluded (MAXLOC= override)
+	scripts/loc.sh -m $(or $(MAXLOC),1500)
+
+vuln: ## govulncheck against the Go vuln DB (needs network; not part of qa)
+	$(GO) tool govulncheck $(PKGS)
 
 clean: ## Remove build artifacts
 	@echo "Cleaning build directory..."
-	rm -rf $(BUILD_DIR)
-
-help: ## Show this help message
-	@echo "Usage: make [target]"
-	@echo ""
-	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@rm -rf $(BUILD_DIR)

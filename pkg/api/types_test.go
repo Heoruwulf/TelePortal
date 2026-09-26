@@ -27,7 +27,7 @@ func TestWebSocketMessageTypes(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected string
 	}{
 		{
@@ -72,7 +72,6 @@ func TestWebSocketMessageTypes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			data, err := json.Marshal(tt.input)
@@ -84,7 +83,7 @@ func TestWebSocketMessageTypes(t *testing.T) {
 			}
 
 			// Test unmarshal back
-			var unmarshaled map[string]interface{}
+			var unmarshaled map[string]any
 			if err := json.Unmarshal(data, &unmarshaled); err != nil {
 				t.Fatalf("failed to unmarshal: %v", err)
 			}

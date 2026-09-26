@@ -149,7 +149,17 @@ func (m *CallManager) HangupCall(ctx context.Context, callID string) error {
 	}
 
 	m.log.Info("Programmatically hanging up call", zap.String("sip_call_id", callID))
-	return call.Dialog.Bye(ctx)
+
+	if call.Dialog != nil {
+		return call.Dialog.Bye(ctx)
+	}
+
+	if call.AudioBridge != nil {
+		call.AudioBridge.CloseAll()
+	}
+	m.Remove(callID)
+
+	return nil
 }
 
 // StopAll terminates all active calls, e.g., during a graceful shutdown.

@@ -45,10 +45,7 @@ func (g *DTMFGenerator) Generate(digit string, durationMs int) [][]byte {
 	// Calculate total duration in samples
 	totalSamples := uint16((g.sampleRate * durationMs) / 1000)
 
-	intervalMs := g.ptime
-	if durationMs < intervalMs {
-		intervalMs = durationMs
-	}
+	intervalMs := min(durationMs, g.ptime)
 	ptimeSamples := uint16((g.sampleRate * intervalMs) / 1000)
 
 	var payloads [][]byte
@@ -73,7 +70,7 @@ func (g *DTMFGenerator) Generate(digit string, durationMs int) [][]byte {
 	}
 
 	// 2. Send 3 end packets (E bit set) as per RFC 2833 retransmission requirements
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		payload := audiopool.GetBuffer(4)
 		payload[0] = event
 		payload[1] = 0x8A // E=1 (bit 0), Volume 10

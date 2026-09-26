@@ -18,7 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package audio
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -30,8 +29,7 @@ func TestPacketizer(t *testing.T) {
 	sampleRate := 8000
 	p := NewPacketizer(ptime, sampleRate, 2, 1)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go p.Run(ctx)
 

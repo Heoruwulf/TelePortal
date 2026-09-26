@@ -48,6 +48,13 @@ type Client struct {
 	disconnect sync.Once
 }
 
+func safeRemoteAddr(conn *websocket.Conn) string {
+	if conn == nil || conn.RemoteAddr() == nil {
+		return ""
+	}
+	return conn.RemoteAddr().String()
+}
+
 func newClient(conn *websocket.Conn) *Client {
 	return &Client{
 		conn: conn,
@@ -92,7 +99,7 @@ func (c *Client) writePump(log *zap.Logger, remove func()) {
 
 			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(message.Type, message.Payload); err != nil {
-				log.Warn("Failed to write to WebSocket client", zap.Error(err), zap.String("remote_addr", c.conn.RemoteAddr().String()))
+				log.Warn("Failed to write to WebSocket client", zap.Error(err), zap.String("remote_addr", safeRemoteAddr(c.conn)))
 				if message.Type == websocket.BinaryMessage {
 					audiopool.PutBuffer(message.Payload)
 				}
@@ -224,7 +231,7 @@ func (b *AudioBridge) CloseAll() {
 			client.disconnect.Do(func() {
 				close(client.send)
 				b.metrics.DecWSConnections()
-				b.log.Info("WebSocket client forcefully removed during shutdown", zap.String("remote_addr", client.conn.RemoteAddr().String()))
+				b.log.Info("WebSocket client forcefully removed during shutdown", zap.String("remote_addr", safeRemoteAddr(client.conn)))
 			})
 		}
 
@@ -337,7 +344,7 @@ func (b *AudioBridge) AddClient(conn *websocket.Conn) {
 		b.RemoveClient(conn)
 	})
 
-	b.log.Info("WebSocket client added", zap.String("remote_addr", conn.RemoteAddr().String()))
+	b.log.Info("WebSocket client added", zap.String("remote_addr", safeRemoteAddr(conn)))
 }
 
 // ReadPump handles incoming messages from a WebSocket client. It should be called from the HTTP handler.
@@ -383,7 +390,7 @@ func (b *AudioBridge) ReadPump(conn *websocket.Conn) {
 
 			// Some messages might be larger than 4K, so we should read it all.
 			// For zero-allocation, we'll append to our pooled buffer if needed.
-			var fullPayload []byte = payload[:n]
+			fullPayload := payload[:n]
 
 			for readErr == nil {
 				if len(fullPayload) == cap(fullPayload) {
@@ -504,7 +511,7 @@ func (b *AudioBridge) RemoveClient(conn *websocket.Conn) {
 		client.disconnect.Do(func() {
 			close(client.send)
 			b.metrics.DecWSConnections()
-			b.log.Info("WebSocket client removed", zap.String("remote_addr", conn.RemoteAddr().String()))
+			b.log.Info("WebSocket client removed", zap.String("remote_addr", safeRemoteAddr(conn)))
 		})
 	}
 }
@@ -613,7 +620,7 @@ func (b *AudioBridge) runAudioProcessor(ctx context.Context) error {
 				b.metrics.ObserveTranscodingDuration(sourceCodec, time.Since(start))
 			}
 
-			if b.recorder != nil {
+			if b.recorder != nil && l16Payload != nil {
 				b.recorder.PushLeft(l16Payload)
 			}
 
@@ -628,23 +635,9 @@ func (b *AudioBridge) runAudioProcessor(ctx context.Context) error {
 					// Pass-through or source matches target: send raw payload
 					// We must copy the payload because broadcast takes ownership and returns to pool,
 					// but we also need to return the original packet to pool later.
-					// Actually, packet.Payload is what we want to send.
-
-					// To avoid double-free or other issues, let's get a new buffer if we are ALSO recording.
-					if b.recorder != nil {
-						payloadCopy := audiopool.GetBuffer(len(packet.Payload))
-						copy(payloadCopy, packet.Payload)
-						b.broadcast(websocket.BinaryMessage, payloadCopy)
-					} else {
-						// If NOT recording, we can just broadcast packet.Payload and NOT return it to pool here.
-						// Wait, the broadcast tool says it returns to pool if it's BinaryMessage.
-						// And our loop at the end returns packet.Payload to pool.
-						// This is tricky.
-
-						payloadCopy := audiopool.GetBuffer(len(packet.Payload))
-						copy(payloadCopy, packet.Payload)
-						b.broadcast(websocket.BinaryMessage, payloadCopy)
-					}
+					payloadCopy := audiopool.GetBuffer(len(packet.Payload))
+					copy(payloadCopy, packet.Payload)
+					b.broadcast(websocket.BinaryMessage, payloadCopy)
 				}
 			} else if transcodingRequired && l16Payload != nil {
 				// We decoded it but no one is listening, return l16Payload to pool

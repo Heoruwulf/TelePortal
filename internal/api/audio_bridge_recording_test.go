@@ -54,18 +54,18 @@ func TestAudioBridge_RecordingIntegration(t *testing.T) {
 	bridge.Start()
 
 	// Send 50 packets to Rx (Left) - 1 second at 20ms ptime
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		payload := make([]byte, 320)
-		for j := 0; j < 160; j++ {
+		for j := range 160 {
 			binary.BigEndian.PutUint16(payload[j*2:], uint16(100))
 		}
 		audioInput <- rtpdefs.RTPPacket{Payload: payload}
 	}
 
 	// Send 50 packets to Tx (Right)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		payload := make([]byte, 320)
-		for j := 0; j < 160; j++ {
+		for j := range 160 {
 			binary.LittleEndian.PutUint16(payload[j*2:], uint16(200))
 		}
 		bridge.recorder.PushRight(payload)

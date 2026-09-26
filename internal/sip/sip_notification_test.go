@@ -43,18 +43,22 @@ type mockCache struct {
 func (m *mockCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	return nil
 }
+
 func (m *mockCache) Get(ctx context.Context, key string) (string, error) {
 	return "", nil
 }
+
 func (m *mockCache) Del(ctx context.Context, key string) error {
 	return nil
 }
+
 func (m *mockCache) Publish(ctx context.Context, channel string, message any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.publishedMessages = append(m.publishedMessages, string(message.([]byte)))
 	return nil
 }
+
 func (m *mockCache) Close() error {
 	return nil
 }

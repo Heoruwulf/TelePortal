@@ -135,11 +135,11 @@ func TestDualIndexedArray(t *testing.T) {
 		workers := 50
 		itemsPerWorker := 100
 
-		for i := 0; i < workers; i++ {
+		for i := range workers {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < itemsPerWorker; j++ {
+				for j := range itemsPerWorker {
 					id := strconv.Itoa(workerID*itemsPerWorker + j)
 					d.Add(&testItem{id, "b" + id, "val"})
 				}
@@ -154,11 +154,11 @@ func TestDualIndexedArray(t *testing.T) {
 		}
 
 		// Test concurrent reads and removes
-		for i := 0; i < workers; i++ {
+		for i := range workers {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				for j := 0; j < itemsPerWorker; j++ {
+				for j := range itemsPerWorker {
 					id := strconv.Itoa(workerID*itemsPerWorker + j)
 					if j%2 == 0 {
 						d.GetByKey1(id)

@@ -1,0 +1,49 @@
+version: 1
+
+# Architecture guardrails for TelePortal (run via `make arch-go`).
+# Layering:
+#   cmd/ (entrypoints: teleportal, loadtest)
+#     -> internal/app (orchestration)
+#       -> internal/sip, internal/webrtc, internal/api, internal/call, internal/rtp, internal/audio
+#         -> internal/platform (cache, config, logging, metrics)
+#   pkg/ (exported libraries: api, audio, client - independent from internal and cmd)
+
+threshold:
+  compliance: 100
+  coverage: 100
+
+dependenciesRules:
+  # cmd/ is entrypoints only: no cmd -> cmd cross-imports
+  - package: "github.com.heoruwulf.teleportal.cmd.**"
+    shouldNotDependsOn:
+      internal:
+        - "github.com.heoruwulf.teleportal.cmd.**"
+
+  # internal/ never imports entrypoints
+  - package: "github.com.heoruwulf.teleportal.internal.**"
+    shouldNotDependsOn:
+      internal:
+        - "github.com.heoruwulf.teleportal.cmd.**"
+
+  # pkg/ is public library code: never depends on internal or cmd
+  - package: "github.com.heoruwulf.teleportal.pkg.**"
+    shouldNotDependsOn:
+      internal:
+        - "github.com.heoruwulf.teleportal.cmd.**"
+        - "github.com.heoruwulf.teleportal.internal.**"
+
+  # platform utilities should not depend on high-level subsystems
+  - package: "github.com.heoruwulf.teleportal.internal.platform.**"
+    shouldNotDependsOn:
+      internal:
+        - "github.com.heoruwulf.teleportal.internal.app.**"
+        - "github.com.heoruwulf.teleportal.internal.sip.**"
+        - "github.com.heoruwulf.teleportal.internal.api.**"
+        - "github.com.heoruwulf.teleportal.internal.call.**"
+
+functionsRules:
+  - package: "github.com.heoruwulf.teleportal.**"
+    maxParameters: 12
+    maxReturnValues: 6
+    maxLines: 200
+    maxPublicFunctionPerFile: 20

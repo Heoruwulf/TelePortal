@@ -104,7 +104,7 @@ func TestCallManager_WaitEmpty(t *testing.T) {
 		const waiterCount = 5
 		errCh := make(chan error, waiterCount)
 
-		for i := 0; i < waiterCount; i++ {
+		for range waiterCount {
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
@@ -115,7 +115,7 @@ func TestCallManager_WaitEmpty(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		cm.Remove(call.CallID)
 
-		for i := 0; i < waiterCount; i++ {
+		for i := range waiterCount {
 			select {
 			case err := <-errCh:
 				if err != nil {

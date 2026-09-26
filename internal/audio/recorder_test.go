@@ -45,7 +45,7 @@ func TestStereoRecorder_Interleaving(t *testing.T) {
 	left := make([]byte, 20)  // 10 samples * 2 bytes
 	right := make([]byte, 20) // 10 samples * 2 bytes
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		binary.LittleEndian.PutUint16(left[i*2:], uint16(i+1))
 		binary.LittleEndian.PutUint16(right[i*2:], uint16((i+1)*10))
 	}
@@ -94,7 +94,7 @@ func TestStereoRecorder_Interleaving(t *testing.T) {
 		t.Errorf("expected %d samples, got %d", expectedLen, len(buf.Data))
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if buf.Data[i*2] != i+1 {
 			t.Errorf("sample %d Left: expected %d, got %d", i, i+1, buf.Data[i*2])
 		}
@@ -138,7 +138,7 @@ func TestStereoRecorder_SilenceHandling(t *testing.T) {
 
 	// Send 1 second of Left audio only
 	left := make([]byte, sampleRate*2) // 1 second * 2 bytes
-	for i := 0; i < sampleRate; i++ {
+	for i := range sampleRate {
 		binary.LittleEndian.PutUint16(left[i*2:], uint16(1))
 	}
 
@@ -169,7 +169,7 @@ func TestStereoRecorder_SilenceHandling(t *testing.T) {
 		t.Errorf("expected at least %d samples, got %d", sampleRate*2, len(buf.Data))
 	}
 
-	for i := 0; i < sampleRate; i++ {
+	for i := range sampleRate {
 		if buf.Data[i*2] != 1 {
 			t.Errorf("sample %d Left: expected 1, got %d", i, buf.Data[i*2])
 		}

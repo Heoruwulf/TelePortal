@@ -83,7 +83,6 @@ func (e *RTPEngine) LocalPort() int {
 }
 
 func (e *RTPEngine) SetDTMF(count int, callDuration time.Duration, sentTracker, echoedTracker *int) {
-
 	e.dtmfToSend = count
 	e.dtmfDuration = callDuration
 	e.dtmfSent = sentTracker

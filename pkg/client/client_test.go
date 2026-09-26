@@ -331,12 +331,13 @@ func TestClient_DTMFAndHangup(t *testing.T) {
 			}
 			if mt == websocket.TextMessage {
 				var msg map[string]any
-				json.Unmarshal(p, &msg)
-				if msg["type"] == "dtmf" {
+				_ = json.Unmarshal(p, &msg)
+				switch msg["type"] {
+				case "dtmf":
 					var req api.WsDtmfRequest
-					json.Unmarshal(p, &req)
+					_ = json.Unmarshal(p, &req)
 					dtmfReceived <- req
-				} else if msg["type"] == "bye" {
+				case "bye":
 					byeReceived <- struct{}{}
 				}
 			}

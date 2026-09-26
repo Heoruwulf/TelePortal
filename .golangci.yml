@@ -1,0 +1,59 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - gocritic
+    - gosec
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-SA6002"
+        - "-ST1000"
+        - "-ST1023"
+        - "-ST1003"
+        - "-SA9003"
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+          - gocritic
+        path: _test\.go
+      - linters:
+          - errcheck
+        text: "Error return value of `.*Close` is not checked"
+      - linters:
+          - errcheck
+        text: "Error return value of `.*Hangup` is not checked"
+      - linters:
+          - errcheck
+        text: "Error return value of `.*SetReadDeadline` is not checked"
+      - linters:
+          - errcheck
+        text: "Error return value of `d.FwdToPCM` is not checked"
+      - linters:
+          - gosec
+        text: "G115:"
+      - linters:
+          - gosec
+        text: "G104:"
+      - linters:
+          - gosec
+        text: "G108:"
+      - linters:
+          - gosec
+        text: "G112:"
+      - linters:
+          - gosec
+        text: "G301:"
+      - linters:
+          - gosec
+        text: "G404:"
+      - linters:
+          - gosec
+        text: "G602:"
+      - linters:
+          - staticcheck
+        text: "SA6002:"

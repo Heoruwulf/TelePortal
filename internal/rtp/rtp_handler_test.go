@@ -18,7 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package rtp
 
 import (
-	"context"
 	"net"
 	"testing"
 	"time"
@@ -55,8 +54,7 @@ func TestStartReader_DTMF(t *testing.T) {
 
 	addr := l.LocalAddr()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	info := audio.Stream{
 		Codec: audio.Codec{
@@ -118,8 +116,7 @@ func TestStartWriter_DTMFInjection(t *testing.T) {
 
 	addr := l.LocalAddr()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	info := audio.Stream{
 		Codec: audio.Codec{

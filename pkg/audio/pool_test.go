@@ -41,7 +41,6 @@ func TestGetBuffer(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			b := GetBuffer(tt.size)
@@ -99,7 +98,7 @@ func TestPutBuffer(t *testing.T) {
 		// reduces capacity and causes subsequent allocations if not handled.
 
 		// 1. Warm up the pool to ensure we are testing reuse, not initial allocation
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			PutBuffer(make([]byte, SizeDefault))
 		}
 
@@ -137,7 +136,6 @@ func TestGetIntBuffer(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			b := GetIntBuffer(tt.size)
@@ -183,9 +181,9 @@ func TestBufferConcurrency(t *testing.T) {
 	const iterations = 1000
 	done := make(chan bool, workers)
 
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				b := GetBuffer(Size320)
 				if len(b) != Size320 {
 					// We can't use t.Errorf here safely from goroutine without sync,
@@ -204,7 +202,7 @@ func TestBufferConcurrency(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < workers; i++ {
+	for range workers {
 		<-done
 	}
 }

@@ -30,7 +30,7 @@ func EncodeL16ToPCMU(l16 []byte) ([]byte, error) {
 	}
 
 	pcmu := audiopool.GetBuffer(len(l16) / 2)
-	for i := 0; i < len(pcmu); i++ {
+	for i := range pcmu {
 		sample := int16(l16[i*2]) | int16(l16[i*2+1])<<8
 		// Cast to uint16 to use as an index for the 65536-element array
 		pcmu[i] = pcmToMuLawTable[uint16(sample)]
@@ -45,7 +45,7 @@ func EncodeL16ToPCMA(l16 []byte) ([]byte, error) {
 	}
 
 	pcma := audiopool.GetBuffer(len(l16) / 2)
-	for i := 0; i < len(pcma); i++ {
+	for i := range pcma {
 		sample := int16(l16[i*2]) | int16(l16[i*2+1])<<8
 		// Cast to uint16 to use as an index for the 65536-element array
 		pcma[i] = pcmToAlawTable[uint16(sample)]

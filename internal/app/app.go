@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/emiago/sipgo"
 	"github.com/emiago/sipgo/sip"
@@ -37,6 +38,7 @@ import (
 	"github.com/heoruwulf/teleportal/internal/rtp"
 	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
 	siphandler "github.com/heoruwulf/teleportal/internal/sip"
+	"github.com/heoruwulf/teleportal/internal/webrtc"
 	"github.com/labstack/echo/v4"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -171,13 +173,15 @@ func NewApp(logger *zap.Logger, logAtomicLevel zap.AtomicLevel, config *config.C
 		metrics:        m,
 	}
 
-	// Register API and WebSocket handlers
-	httpHandler := api.NewHTTPHandler(logger, callManager, m, config, &app.isReady)
-	httpHandler.RegisterHandlers(e)
-
 	audioBridgeFactory := func(ctx context.Context, log *zap.Logger, audioInput <-chan rtpdefs.RTPPacket, callID string, stream audio.Stream) call.AudioBridgeInterface {
 		return api.NewAudioBridge(ctx, log, m, audioInput, callID, stream, config.Audio.RecordingPath, config.Audio.WebSocketCodec)
 	}
+
+	webrtcManager := webrtc.NewCallManager(logger, c, callManager, audioBridgeFactory)
+
+	// Register API and WebSocket handlers
+	httpHandler := api.NewHTTPHandler(logger, callManager, webrtcManager, m, config, &app.isReady)
+	httpHandler.RegisterHandlers(e)
 
 	sHandler := siphandler.NewSIPHandler(
 		logger.Named("sip"),
@@ -250,7 +254,9 @@ func (a *App) Run(ctx context.Context) error {
 	g.Go(func() error {
 		<-gCtx.Done() // Wait for shutdown signal.
 		a.log.Info("Shutting down WebSocket server...")
-		return a.httpServer.Shutdown(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return a.httpServer.Shutdown(ctx)
 	})
 
 	if a.config.Features.PProf {
@@ -267,7 +273,9 @@ func (a *App) Run(ctx context.Context) error {
 			go func() {
 				<-gCtx.Done()
 				a.log.Info("Shutting down pprof server...")
-				_ = pprofServer.Shutdown(context.Background())
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = pprofServer.Shutdown(ctx)
 			}()
 
 			err := pprofServer.ListenAndServe()

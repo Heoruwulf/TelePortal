@@ -101,12 +101,10 @@ func NewPionJitterBuffer(ctx context.Context, log *zap.Logger, m metrics.Provide
 		pjb.log.Debug("Jitter buffer underflow, back to buffering")
 	})
 
-	pjb.wg.Add(1)
-	go func() {
-		defer pjb.wg.Done()
+	pjb.wg.Go(func() {
 		<-ctx.Done()
 		pjb.Stop()
-	}()
+	})
 
 	return pjb
 }
@@ -206,7 +204,6 @@ func (pjb *PionJitterBuffer) run() {
 		case <-ticker.C:
 			isBuffering := pjb.isBuffering.Load()
 			packet, err := pjb.jb.Pop()
-
 			if err != nil {
 				if errors.Is(err, jitterbuffer.ErrPopWhileBuffering) {
 					// Still buffering, just wait for next tick

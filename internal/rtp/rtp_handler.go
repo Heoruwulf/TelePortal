@@ -173,11 +173,12 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 			if actualWsCodec == string(info.Codec.Name) {
 				// Pass-through or matched codec
 				if info.Codec.Name == audio.CodecL16 {
-					if wsCodec == string(audio.CodecPass) {
+					switch {
+					case wsCodec == string(audio.CodecPass):
 						payload = l16Payload // Already BE if PASS mode
-					} else if info.Codec.IsBigEndian {
+					case info.Codec.IsBigEndian:
 						payload, err = audio.DecodeL16LEToL16BE(l16Payload)
-					} else {
+					default:
 						payload = l16Payload
 					}
 				} else {

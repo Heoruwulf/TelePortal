@@ -18,7 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package audio
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -31,8 +30,7 @@ import (
 func TestPionJitterBuffer(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	log := zap.NewNop()
 	mm := metrics.NewNoOpProvider()
@@ -100,8 +98,7 @@ func TestPionJitterBuffer(t *testing.T) {
 func TestPionJitterBufferSilence(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	log := zap.NewNop()
 	mm := metrics.NewNoOpProvider()

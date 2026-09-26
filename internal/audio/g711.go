@@ -39,16 +39,16 @@ var initOnce sync.Once
 func Initialize() {
 	initOnce.Do(func() {
 		// Initialize mu-law table
-		for i := 0; i < 256; i++ {
+		for i := range 256 {
 			muLawToPcmTable[i] = muLawToLinear(byte(i))
 		}
 		// Initialize a-law table
-		for i := 0; i < 256; i++ {
+		for i := range 256 {
 			aLawToPcmTable[i] = aLawToLinear(byte(i))
 		}
 
 		// Initialize reverse tables for encoding
-		for i := 0; i < 65536; i++ {
+		for i := range 65536 {
 			sample := int16(uint16(i))
 			pcmToMuLawTable[i] = linearToMuLaw(sample)
 			pcmToAlawTable[i] = linearToALaw(sample)
@@ -81,7 +81,7 @@ func linearToMuLaw(pcm int16) byte {
 		p = 32767
 	}
 	exponent := uint8(7)
-	for i := uint8(0); i < 7; i++ {
+	for i := range uint8(7) {
 		if (p & (0x4000 >> i)) != 0 {
 			exponent = 7 - i
 			break
@@ -122,7 +122,7 @@ func linearToALaw(pcm int16) byte {
 		p = 32767
 	}
 	exponent := uint8(7)
-	for i := uint8(0); i < 7; i++ {
+	for i := range uint8(7) {
 		if (p & (0x4000 >> i)) != 0 {
 			exponent = 7 - i
 			break

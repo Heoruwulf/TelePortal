@@ -49,6 +49,7 @@ func (m *mockAudioBridge) RemoveClient(conn *websocket.Conn)                  { 
 func (m *mockAudioBridge) SetAudioOutput(ch chan<- []byte)                    {}
 func (m *mockAudioBridge) WsCodec() string                                    { return "L16" }
 func (m *mockAudioBridge) CloseAll()                                          { m.hasClient = false; m.reserved = false }
+
 func (m *mockAudioBridge) TryLock() bool {
 	if m.reserved || m.hasClient {
 		return false
@@ -69,7 +70,7 @@ func TestHTTPHandler_HandleUpgrade_Concurrency(t *testing.T) {
 	cfg := &config.CoreConfig{}
 	var isReady atomic.Bool
 	isReady.Store(true)
-	h := NewHTTPHandler(log, cm, m, cfg, &isReady)
+	h := NewHTTPHandler(log, cm, nil, m, cfg, &isReady)
 
 	e := echo.New()
 	h.RegisterHandlers(e)

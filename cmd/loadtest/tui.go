@@ -47,8 +47,10 @@ type tuiModel struct {
 	dtmfEchoed int
 }
 
-type tickMsg time.Time
-type stateUpdateMsg struct{}
+type (
+	tickMsg        time.Time
+	stateUpdateMsg struct{}
+)
 
 func doTick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
@@ -112,22 +114,19 @@ func (m tuiModel) View() string {
 	b.WriteString("\n")
 
 	elapsed := time.Since(m.startTime).Round(time.Second)
-	remaining := m.duration - elapsed
-	if remaining < 0 {
-		remaining = 0
-	}
+	remaining := max(m.duration-elapsed, 0)
 
-	b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("Time Elapsed:"), valueStyle.Render(elapsed.String())))
-	b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("Time Remaining:"), valueStyle.Render(remaining.String())))
+	fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("Time Elapsed:"), valueStyle.Render(elapsed.String()))
+	fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("Time Remaining:"), valueStyle.Render(remaining.String()))
 	b.WriteString("\n")
 
-	b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("Total Calls:"), valueStyle.Render(fmt.Sprint(m.total))))
-	b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("SIP Connected:"), valueStyle.Render(fmt.Sprint(m.connected))))
-	b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("WS Established:"), valueStyle.Render(fmt.Sprint(m.ws))))
+	fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("Total Calls:"), valueStyle.Render(fmt.Sprint(m.total)))
+	fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("SIP Connected:"), valueStyle.Render(fmt.Sprint(m.connected)))
+	fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("WS Established:"), valueStyle.Render(fmt.Sprint(m.ws)))
 
 	if m.orchestrator.cfg.DTMF > 0 {
 		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("DTMF Sent:"), valueStyle.Render(fmt.Sprint(m.dtmfSent))))
+		fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("DTMF Sent:"), valueStyle.Render(fmt.Sprint(m.dtmfSent)))
 
 		echoStr := fmt.Sprint(m.dtmfEchoed)
 		if m.dtmfEchoed < m.dtmfSent {
@@ -135,7 +134,7 @@ func (m tuiModel) View() string {
 		} else {
 			echoStr = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render(echoStr) // Green
 		}
-		b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("DTMF Echoed:"), echoStr))
+		fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("DTMF Echoed:"), echoStr)
 	}
 
 	errStr := fmt.Sprint(m.errs)
@@ -144,7 +143,7 @@ func (m tuiModel) View() string {
 	} else {
 		errStr = valueStyle.Render(errStr)
 	}
-	b.WriteString(fmt.Sprintf("%s%s\n", labelStyle.Render("Errors:"), errStr))
+	fmt.Fprintf(&b, "%s%s\n", labelStyle.Render("Errors:"), errStr)
 
 	b.WriteString("\nPress 'q' or 'ctrl+c' to stop gracefully.")
 

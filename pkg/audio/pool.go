@@ -133,7 +133,7 @@ func GetBuffer(size int) []byte {
 //
 //lint:ignore SA6002 Profiling confirmed passing slice value is faster than pointer dereferencing here
 func PutBuffer(b []byte) {
-	if cap(b) == 0 {
+	if b == nil || cap(b) == 0 {
 		return
 	}
 	// Restore the slice to its full capacity before returning to the pool.
@@ -183,7 +183,7 @@ func GetIntBuffer(size int) []int {
 //
 //lint:ignore SA6002 Profiling confirmed passing slice value is faster than pointer dereferencing here
 func PutIntBuffer(b []int) {
-	if cap(b) == 0 {
+	if b == nil || cap(b) == 0 {
 		return
 	}
 	// Restore the slice to its full capacity before returning to the pool.

@@ -43,7 +43,7 @@ func NewRedisWatcher(addr string) *RedisWatcher {
 }
 
 func (rw *RedisWatcher) Start(ctx context.Context) error {
-	pubsub := rw.client.Subscribe(ctx, api.RedisChannelCallEvents)
+	pubsub := rw.client.Subscribe(ctx, api.RedisChannelCallEvents, api.RedisChannelWebRTCCallEvents)
 	defer pubsub.Close()
 
 	ch := pubsub.Channel()

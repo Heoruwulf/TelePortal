@@ -230,10 +230,10 @@ func (h *SIPHandler) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 	wsURL := fmt.Sprintf("%s/v1/listen/%s/%s", h.instanceURL, activeCall.ID.String(), callID)
 	// Ensure we have a ws:// or wss:// prefix
 	if !strings.HasPrefix(wsURL, "ws://") && !strings.HasPrefix(wsURL, "wss://") {
-		if strings.HasPrefix(wsURL, "https://") {
-			wsURL = "wss://" + strings.TrimPrefix(wsURL, "https://")
-		} else if strings.HasPrefix(wsURL, "http://") {
-			wsURL = "ws://" + strings.TrimPrefix(wsURL, "http://")
+		if after, ok0 := strings.CutPrefix(wsURL, "https://"); ok0 {
+			wsURL = "wss://" + after
+		} else if after, ok0 := strings.CutPrefix(wsURL, "http://"); ok0 {
+			wsURL = "ws://" + after
 		} else {
 			wsURL = "ws://" + wsURL
 		}

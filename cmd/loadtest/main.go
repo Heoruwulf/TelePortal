@@ -32,17 +32,21 @@ import (
 
 type Config struct {
 	SIPAddr   string
+	APIAddr   string
 	RedisAddr string
 	AudioFile string
+	Protocol  string
 	RampUp    time.Duration
 	Duration  time.Duration
 	Calls     int
-	DTMF      int // Number of DTMF events to send per call
+	DTMF      int
 }
 
 func parseFlags() Config {
 	cfg := Config{}
+	flag.StringVar(&cfg.Protocol, "protocol", "sip", "Protocol to use: sip or webrtc")
 	flag.StringVar(&cfg.SIPAddr, "sip-addr", "127.0.0.1:5060", "TelePortal SIP address")
+	flag.StringVar(&cfg.APIAddr, "api-addr", "127.0.0.1:8080", "TelePortal HTTP API address")
 	flag.StringVar(&cfg.RedisAddr, "redis-addr", "127.0.0.1:6379", "Redis address")
 	flag.IntVar(&cfg.Calls, "calls", 50, "Total number of concurrent calls")
 	flag.DurationVar(&cfg.RampUp, "ramp-up", 2*time.Second, "Ramp-up time to reach total calls")
@@ -72,7 +76,8 @@ func main() {
 
 	orch, err := NewOrchestrator(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize orchestrator: %v", err)
+		log.Printf("Failed to initialize orchestrator: %v", err)
+		return
 	}
 
 	go func() {
@@ -83,7 +88,7 @@ func main() {
 
 	p := tea.NewProgram(initialModel(orch))
 	if _, err := p.Run(); err != nil {
-		log.Fatalf("Error running program: %v", err)
+		log.Printf("Error running program: %v", err)
 	}
 
 	// Trigger teardown

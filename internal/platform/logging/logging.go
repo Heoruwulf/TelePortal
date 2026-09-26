@@ -56,7 +56,7 @@ func New(cfg config.LogConfig) (*zap.Logger, zap.AtomicLevel, error) {
 	errorOutputPaths := []string{"stderr"}
 
 	if cfg.Path != "" {
-		if err := os.MkdirAll(cfg.Path, 0755); err != nil {
+		if err := os.MkdirAll(cfg.Path, 0o755); err != nil {
 			return nil, zap.AtomicLevel{}, fmt.Errorf("failed to create log directory: %w", err)
 		}
 		filename := fmt.Sprintf("%s_teleportal.log", time.Now().Format("20060102_150405"))

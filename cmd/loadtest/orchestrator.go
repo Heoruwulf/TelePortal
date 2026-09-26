@@ -23,6 +23,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +46,9 @@ func (o *Orchestrator) loadAudio() error {
 	}
 
 	format := d.Format()
+	if format == nil {
+		return fmt.Errorf("could not read WAV format: %s", o.cfg.AudioFile)
+	}
 	if format.SampleRate != 8000 && format.SampleRate != 16000 && format.SampleRate != 48000 {
 		return fmt.Errorf("unsupported sample rate: %d", format.SampleRate)
 	}
@@ -122,11 +126,17 @@ const (
 	StateFinished  CallState = "Finished"
 )
 
+type CallDriver interface {
+	Dial(ctx context.Context) error
+	CallID() string
+	Start(ctx context.Context) error
+	Hangup(ctx context.Context) error
+}
+
 type Simulator struct {
 	StartTime  time.Time
 	LastError  error
-	caller     *Caller
-	rtpEngine  *RTPEngine
+	driver     CallDriver
 	wsAgent    *WSEchoAgent
 	cancel     context.CancelFunc
 	CallID     string
@@ -178,7 +188,6 @@ func NewOrchestrator(cfg Config) (*Orchestrator, error) {
 	}
 
 	client, err := sipgo.NewClient(ua)
-
 	if err != nil {
 		return nil, fmt.Errorf("creating SIP client: %w", err)
 	}
@@ -266,45 +275,80 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	return g.Wait()
 }
 
+type SIPDriver struct {
+	caller    *Caller
+	rtpEngine *RTPEngine
+}
+
+func (d *SIPDriver) Dial(ctx context.Context) error {
+	return d.caller.Dial(ctx)
+}
+
+func (d *SIPDriver) CallID() string {
+	return d.caller.callID
+}
+
+func (d *SIPDriver) Start(ctx context.Context) error {
+	return d.rtpEngine.Start(ctx)
+}
+
+func (d *SIPDriver) Hangup(ctx context.Context) error {
+	defer d.rtpEngine.Close()
+	return d.caller.Hangup(ctx)
+}
+
 func (o *Orchestrator) runSimulator(ctx context.Context, sim *Simulator) {
-	localIP := net.ParseIP("127.0.0.1") // Can be parameterized
+	var driver CallDriver
 
-	// Target port is parsed from SIPAddr
-	host, _, err := net.SplitHostPort(o.cfg.SIPAddr)
-	if err != nil {
-		host = o.cfg.SIPAddr
-	}
-	targetIP := net.ParseIP(host)
-	if targetIP == nil {
-		addrs, _ := net.LookupIP(host)
-		if len(addrs) > 0 {
-			targetIP = addrs[0]
-		} else {
-			targetIP = net.ParseIP("127.0.0.1")
+	switch o.cfg.Protocol {
+	case "sip":
+		localIP := net.ParseIP("127.0.0.1") // Can be parameterized
+
+		// Target port is parsed from SIPAddr
+		host, _, err := net.SplitHostPort(o.cfg.SIPAddr)
+		if err != nil {
+			host = o.cfg.SIPAddr
 		}
-	}
+		targetIP := net.ParseIP(host)
+		if targetIP == nil {
+			addrs, _ := net.LookupIP(host)
+			if len(addrs) > 0 {
+				targetIP = addrs[0]
+			} else {
+				targetIP = net.ParseIP("127.0.0.1")
+			}
+		}
 
-	rtpPortBase := 10000 + (sim.ID * 2)
-	rtp, err := NewRTPEngine(localIP, targetIP, rtpPortBase, o.payloadType, o.sampleRate, o.payload)
-	if err != nil {
+		rtpPortBase := 10000 + (sim.ID * 2)
+		rtp, err := NewRTPEngine(localIP, targetIP, rtpPortBase, o.payloadType, o.sampleRate, o.payload)
+		if err != nil {
+			sim.State = StateError
+			sim.LastError = err
+			log.Printf("Error running sim: %v", err)
+			o.notifyState(sim)
+			return
+		}
+
+		if o.cfg.DTMF > 0 {
+			rtp.SetDTMF(o.cfg.DTMF, o.cfg.Duration, &sim.DTMFSent, &sim.DTMFEchoed)
+		}
+
+		caller := NewCaller(o.sipClient, o.cfg.SIPAddr, localIP, rtp.LocalPort(), o.payloadType, string(o.codecName), o.sampleRate)
+		driver = &SIPDriver{caller: caller, rtpEngine: rtp}
+	case "webrtc":
+		wsURL := fmt.Sprintf("ws://%s/v1/webrtc/connect", o.cfg.APIAddr)
+		driver = NewWebRTCDriver(wsURL, o.payloadType, o.sampleRate, o.payload)
+	default:
 		sim.State = StateError
-		sim.LastError = err
-		log.Printf("Error running sim: %v", err)
+		sim.LastError = fmt.Errorf("unknown protocol: %s", o.cfg.Protocol)
 		o.notifyState(sim)
 		return
 	}
-	sim.rtpEngine = rtp
 
-	if o.cfg.DTMF > 0 {
-		rtp.SetDTMF(o.cfg.DTMF, o.cfg.Duration, &sim.DTMFSent, &sim.DTMFEchoed)
-	}
+	sim.driver = driver
+	sim.CallID = driver.CallID()
 
-	caller := NewCaller(o.sipClient, o.cfg.SIPAddr, localIP, rtp.LocalPort(), o.payloadType, string(o.codecName), o.sampleRate)
-	sim.caller = caller
-	sim.CallID = caller.callID
-
-	err = caller.Dial(ctx)
-	if err != nil {
+	if err := driver.Dial(ctx); err != nil {
 		sim.State = StateError
 		sim.LastError = err
 		log.Printf("Error running sim: %v", err)
@@ -315,16 +359,15 @@ func (o *Orchestrator) runSimulator(ctx context.Context, sim *Simulator) {
 	sim.State = StateConnected
 	o.notifyState(sim)
 
-	// Start RTP (this blocks until ctx is done)
-	if err := rtp.Start(ctx); err != nil && err != context.Canceled {
-		log.Printf("RTP error for sim %d: %v", sim.ID, err)
+	// Start Media (this blocks until ctx is done)
+	if err := driver.Start(ctx); err != nil && err != context.Canceled {
+		log.Printf("Media error for sim %d: %v", sim.ID, err)
 	}
 
 	// Teardown
 	hangCtx, hangCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer hangCancel()
-	caller.Hangup(hangCtx)
-	rtp.Close()
+	driver.Hangup(hangCtx)
 
 	sim.State = StateFinished
 	o.notifyState(sim)
@@ -336,7 +379,7 @@ func (o *Orchestrator) handleRedisEvents(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case evt := <-o.redisWatch.Events():
-			if evt.Event == "connected" {
+			if evt.Event == "connected" || evt.Event == "webrtc_connected" {
 				o.simMu.Lock()
 				var targetSim *Simulator
 				for _, sim := range o.sims {
@@ -349,6 +392,8 @@ func (o *Orchestrator) handleRedisEvents(ctx context.Context) {
 
 				if targetSim != nil && targetSim.wsAgent == nil {
 					wsURL := evt.WebSocketURL
+					wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
+					wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
 
 					wsAgent := NewWSEchoAgent(wsURL)
 					targetSim.wsAgent = wsAgent

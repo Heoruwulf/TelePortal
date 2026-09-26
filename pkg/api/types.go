@@ -21,7 +21,9 @@ import "time"
 
 const (
 	// RedisChannelCallEvents is the Redis Pub/Sub channel used for broadcasting call lifecycle events.
-	RedisChannelCallEvents = "teleportal.calls.events"
+	RedisChannelCallEvents = "teleportal.voip.calls.events"
+	// RedisChannelWebRTCCallEvents is the Redis Pub/Sub channel for WebRTC call lifecycle events.
+	RedisChannelWebRTCCallEvents = "teleportal.webrtc.calls.events"
 )
 
 // CallsResponse defines the JSON structure for the /v1/calls endpoint.

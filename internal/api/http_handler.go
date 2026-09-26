@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/heoruwulf/teleportal/internal/call"
 	"github.com/heoruwulf/teleportal/internal/platform/config"
@@ -32,6 +34,7 @@ import (
 	pkgapi "github.com/heoruwulf/teleportal/pkg/api"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/pion/webrtc/v4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
@@ -40,6 +43,11 @@ import (
 type TelePortalClaims struct {
 	jwt.RegisteredClaims
 	Admin bool `json:"admin,omitempty"`
+}
+
+// WebRTCManager abstracts the WebRTC call setup
+type WebRTCManager interface {
+	ProcessSignaling(ctx context.Context, callID, wsBaseURL string, offer webrtc.SessionDescription) (*webrtc.SessionDescription, error)
 }
 
 // HTTPHandler handles all HTTP-based requests for the core service,
@@ -51,17 +59,18 @@ type HTTPHandler struct {
 	metrics metrics.Provider
 
 	// 8 bytes
-	log         *zap.Logger
-	callManager *call.CallManager
-	config      *config.CoreConfig
-	isReady     *atomic.Bool
+	log           *zap.Logger
+	callManager   *call.CallManager
+	webrtcManager WebRTCManager
+	config        *config.CoreConfig
+	isReady       *atomic.Bool
 
 	// Struct containing multiple pointer fields
 	upgrader websocket.Upgrader
 }
 
 // NewHTTPHandler creates a new handler.
-func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, m metrics.Provider, cfg *config.CoreConfig, isReady *atomic.Bool) *HTTPHandler {
+func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, wm WebRTCManager, m metrics.Provider, cfg *config.CoreConfig, isReady *atomic.Bool) *HTTPHandler {
 	upgrader := websocket.Upgrader{}
 
 	// Override default CheckOrigin if custom CORS origins are configured
@@ -72,7 +81,7 @@ func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, m metrics.Provider, c
 				return true // Non-browser clients usually don't send an Origin header
 			}
 
-			for _, allowed := range strings.Split(cfg.HTTPServer.CORSOrigins, ",") {
+			for allowed := range strings.SplitSeq(cfg.HTTPServer.CORSOrigins, ",") {
 				allowed = strings.TrimSpace(allowed)
 				if allowed == "*" || strings.EqualFold(allowed, origin) {
 					return true
@@ -83,12 +92,13 @@ func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, m metrics.Provider, c
 	}
 
 	return &HTTPHandler{
-		log:         log.Named("http_handler"),
-		callManager: cm,
-		metrics:     m,
-		upgrader:    upgrader,
-		config:      cfg,
-		isReady:     isReady,
+		log:           log.Named("http_handler"),
+		callManager:   cm,
+		webrtcManager: wm,
+		metrics:       m,
+		upgrader:      upgrader,
+		config:        cfg,
+		isReady:       isReady,
 	}
 }
 
@@ -103,8 +113,8 @@ func (h *HTTPHandler) authMiddleware() echo.MiddlewareFunc {
 			tokenString := ""
 			// 1. Try to get token from Authorization header
 			authHeader := c.Request().Header.Get(echo.HeaderAuthorization)
-			if strings.HasPrefix(authHeader, "Bearer ") {
-				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
+				tokenString = after
 			}
 
 			// 2. Fallback to query parameter (needed for standard WebSockets in browser)
@@ -182,11 +192,14 @@ func (h *HTTPHandler) RegisterHandlers(e *echo.Echo) {
 	{
 		v1.GET("/calls", h.HandleListCalls)
 		v1.GET("/listen/:internal_id/:call_id", h.HandleUpgrade)
+		v1.GET("/webrtc/connect", h.HandleWebRTCConnect)
 	}
 }
 
-var healthyResponseBytes = []byte(`{"status": "healthy"}`)
-var unreadyResponseBytes = []byte(`{"status": "unready"}`)
+var (
+	healthyResponseBytes = []byte(`{"status": "healthy"}`)
+	unreadyResponseBytes = []byte(`{"status": "unready"}`)
+)
 
 // HandleHealthz is the liveness probe. It returns 200 as long as the server is running.
 func (h *HTTPHandler) HandleHealthz(c echo.Context) error {
@@ -302,13 +315,81 @@ func (h *HTTPHandler) HandleUpgrade(c echo.Context) error {
 
 	h.log.Info("WebSocket client connected and listening",
 		zap.String("sip_call_id", callID),
-		zap.String("remote_addr", ws.RemoteAddr().String()),
+		zap.String("remote_addr", safeRemoteAddr(ws)),
 	)
 
 	// Block the HTTP handler while reading from the WebSocket.
 	// The read pump will exit when the connection is closed or an error occurs.
 	activeCall.AudioBridge.ReadPump(ws)
-	h.log.Info("WebSocket client disconnected gracefully", zap.String("remote_addr", ws.RemoteAddr().String()))
+	h.log.Info("WebSocket client disconnected gracefully", zap.String("remote_addr", safeRemoteAddr(ws)))
 
+	return nil
+}
+
+// HandleWebRTCConnect is the Echo handler for GET /v1/webrtc/connect
+func (h *HTTPHandler) HandleWebRTCConnect(c echo.Context) error {
+	if h.config.Auth.JWTSecret != "" {
+		claims, ok := c.Get("claims").(*TelePortalClaims)
+		if !ok || claims == nil {
+			return c.String(http.StatusInternalServerError, "Missing claims in context")
+		}
+	}
+
+	ws, err := h.upgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		h.log.Error("Failed to upgrade WebRTC signaling connection", zap.Error(err))
+		return err
+	}
+	defer ws.Close()
+
+	h.log.Info("WebRTC signaling client connected", zap.String("remote_addr", safeRemoteAddr(ws)))
+
+	if h.webrtcManager == nil {
+		h.log.Error("WebRTC Manager not configured")
+		return c.String(http.StatusInternalServerError, "WebRTC not supported")
+	}
+
+	// 1. Read SDP Offer
+	var offer webrtc.SessionDescription
+	if err := ws.ReadJSON(&offer); err != nil {
+		h.log.Error("Failed to read SDP offer", zap.Error(err))
+		return err
+	}
+
+	// 2. Generate a Call ID
+	callID := uuid.New().String()
+
+	// 3. Construct wsBaseURL
+	// The client communicates with the same HTTP server for WebSocket Listen
+	scheme := "ws"
+	if c.Request().TLS != nil || c.Request().Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "wss"
+	}
+	wsBaseURL := fmt.Sprintf("%s://%s", scheme, c.Request().Host)
+
+	// 4. Process Signaling
+	answer, err := h.webrtcManager.ProcessSignaling(c.Request().Context(), callID, wsBaseURL, offer)
+	if err != nil {
+		h.log.Error("Failed to process WebRTC signaling", zap.Error(err))
+		return err
+	}
+	defer func() {
+		_ = h.callManager.HangupCall(context.Background(), callID)
+	}()
+
+	// 5. Send SDP Answer
+	if err := ws.WriteJSON(answer); err != nil {
+		h.log.Error("Failed to write SDP answer", zap.Error(err))
+		return err
+	}
+
+	// Wait for client to disconnect
+	for {
+		if _, _, err := ws.ReadMessage(); err != nil {
+			break
+		}
+	}
+
+	h.log.Info("WebRTC signaling client disconnected", zap.String("remote_addr", safeRemoteAddr(ws)))
 	return nil
 }
