@@ -113,11 +113,3 @@ func writeWavHeader(w io.Writer, sampleRate, channels, totalDataBytes int) error
 	}
 	return nil
 }
-
-// packIntsToBytes packs interleaved 16-bit PCM ints into a little-endian byte slice.
-func packIntsToBytes(samples []int, out []byte) {
-	for i, sample := range samples {
-		out[i*2] = byte(sample)
-		out[i*2+1] = byte(sample >> 8)
-	}
-}

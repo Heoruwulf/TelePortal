@@ -28,7 +28,6 @@ import (
 	"github.com/emiago/sipgo"
 	"github.com/emiago/sipgo/sip"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/heoruwulf/teleportal/internal/audio"
 	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"github.com/heoruwulf/teleportal/internal/rtp"
@@ -37,47 +36,44 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// AudioBridgeInterface defines the interface for components that bridge audio between SIP and WebSockets.
-type AudioBridgeInterface interface {
-	Start()
-	Wait() error
-	BroadcastCallEnded()
-	BroadcastDTMF(digit string, duration int)
-	SetOnDTMF(handler func(digit string, duration int))
-	SetOnBye(handler func())
-	AddClient(conn *websocket.Conn)
-	ReadPump(conn *websocket.Conn)
-	RemoveClient(conn *websocket.Conn)
-	SetAudioOutput(ch chan<- []byte)
-	WsCodec() string
-	CloseAll()
-	TryLock() bool
-	Unlock()
+// CallConfig defines parameters for initializing a call session (SIP or WebRTC).
+type CallConfig struct {
+	RTPStream      net.PacketConn
+	RemoteRTPAddr  net.Addr
+	OnConnected    func()
+	OnFinished     func()
+	Headers        map[string]string
+	Dialog         *sipgo.DialogServerSession
+	OnDisconnected func()
+	AudioInput     chan rtpdefs.RTPPacket
+	WsCodec        string
+	RecordingPath  string
+	CallID         string
+	StreamInfo     audio.Stream
+	MinPacketCount int
+	ID             uuid.UUID
 }
 
-// AudioBridgeFactory is a function that creates a new AudioBridgeInterface.
-type AudioBridgeFactory func(ctx context.Context, log *zap.Logger, audioInput <-chan rtpdefs.RTPPacket, callID string, stream audio.Stream) AudioBridgeInterface
-
-// ActiveCall holds all state for a single ongoing call.
+// ActiveCall holds all state for a single ongoing call (SIP or WebRTC).
 // Note: Fields are strictly ordered by size (largest to smallest) and pointer status
 // to minimize memory padding and reduce GC scan overhead.
 type ActiveCall struct {
 	LiveAt           time.Time
+	JitterBuffer     rtpdefs.JitterBuffer
 	ctx              context.Context
+	metrics          metrics.Provider
 	RTPStream        net.PacketConn
 	RemoteRTPAddr    net.Addr
-	AudioBridge      AudioBridgeInterface
-	JitterBuffer     rtpdefs.JitterBuffer
-	metrics          metrics.Provider
+	Headers          map[string]string
+	g                *errgroup.Group
 	Dialog           *sipgo.DialogServerSession
 	cancel           context.CancelFunc
-	Headers          map[string]string
-	OnDisconnected   func()
-	log              *zap.Logger
-	g                *errgroup.Group
 	dtmfSource       chan rtp.DTMFRequest
+	OnDisconnected   func()
 	OnConnected      func()
 	OnFinished       func()
+	log              *zap.Logger
+	AudioBridge      *AudioBridge
 	CallID           string
 	NegotiatedStream audio.Stream
 	startOnce        sync.Once
@@ -87,47 +83,75 @@ type ActiveCall struct {
 	callEnded        bool
 }
 
-// NewActiveCall creates a new state object for an incoming call.
-func NewActiveCall(
-	log *zap.Logger,
-	dialog *sipgo.DialogServerSession,
-	rtpStream net.PacketConn,
-	req *sip.Request,
-	streamInfo audio.Stream,
-	minPacketCount int,
-	m metrics.Provider,
-	createAudioBridge AudioBridgeFactory,
-) *ActiveCall {
+// NewActiveCall creates and initializes a unified ActiveCall session for SIP or WebRTC.
+func NewActiveCall(log *zap.Logger, m metrics.Provider, cfg CallConfig) *ActiveCall {
 	ctx, cancel := context.WithCancel(context.Background())
-	id := uuid.New()
-	callID := req.CallID().Value()
-	callLog := log.With(zap.String("internal_id", id.String()), zap.String("sip_call_id", callID))
+	id := cfg.ID
+	if id == uuid.Nil {
+		id = uuid.New()
+	}
+	callLog := log.With(zap.String("internal_id", id.String()), zap.String("call_id", cfg.CallID))
 
-	// Select Jitter Buffer Strategy
-	// We now use PionJitterBuffer for both, but we can still tune it based on codec if needed.
-	jitterBuffer := audio.NewPionJitterBuffer(ctx, callLog, m, callID, streamInfo.PTime, streamInfo.Codec.SampleRate, streamInfo.Codec.Name, minPacketCount)
+	var jitterBuffer rtpdefs.JitterBuffer
+	var audioBridgeInput <-chan rtpdefs.RTPPacket
 
-	audioBridge := createAudioBridge(ctx, callLog.Named("audio_bridge"), jitterBuffer.Pop(), callID, streamInfo)
-	audioBridge.Start()
+	if cfg.AudioInput != nil {
+		// WebRTC or pre-provided input channel
+		audioBridgeInput = cfg.AudioInput
+	} else {
+		// SIP standard jitter buffer
+		jb := audio.NewPionJitterBuffer(
+			ctx,
+			callLog,
+			m,
+			cfg.CallID,
+			cfg.StreamInfo.PTime,
+			cfg.StreamInfo.Codec.SampleRate,
+			cfg.StreamInfo.Codec.Name,
+			cfg.MinPacketCount,
+		)
+		jitterBuffer = jb
+		audioBridgeInput = jb.Pop()
+	}
+
+	bridge := NewAudioBridge(
+		ctx,
+		callLog.Named("audio_bridge"),
+		m,
+		audioBridgeInput,
+		cfg.CallID,
+		cfg.StreamInfo,
+		cfg.RecordingPath,
+		cfg.WsCodec,
+	)
+	bridge.Start()
+
+	headers := cfg.Headers
+	if headers == nil {
+		headers = make(map[string]string)
+	}
 
 	call := &ActiveCall{
 		ID:               id,
-		CallID:           callID,
-		Headers:          extractHeaders(req),
-		Dialog:           dialog,
-		RTPStream:        rtpStream,
+		CallID:           cfg.CallID,
+		Headers:          headers,
+		Dialog:           cfg.Dialog,
+		RTPStream:        cfg.RTPStream,
+		RemoteRTPAddr:    cfg.RemoteRTPAddr,
 		JitterBuffer:     jitterBuffer,
-		AudioBridge:      audioBridge,
+		AudioBridge:      bridge,
 		metrics:          m,
 		log:              callLog,
 		ctx:              ctx,
 		cancel:           cancel,
-		NegotiatedStream: streamInfo,
+		NegotiatedStream: cfg.StreamInfo,
 		dtmfSource:       make(chan rtp.DTMFRequest, 10),
+		OnConnected:      cfg.OnConnected,
+		OnDisconnected:   cfg.OnDisconnected,
+		OnFinished:       cfg.OnFinished,
 	}
 
-	// Wire outbound DTMF (WS -> SIP)
-	audioBridge.SetOnDTMF(func(digit string, duration int) {
+	bridge.SetOnDTMF(func(digit string, duration int) {
 		select {
 		case call.dtmfSource <- rtp.DTMFRequest{Digit: digit, Duration: duration}:
 		case <-call.ctx.Done():
@@ -136,13 +160,11 @@ func NewActiveCall(
 		}
 	})
 
-	// Wire outbound BYE (WS -> SIP)
-	audioBridge.SetOnBye(func() {
+	bridge.SetOnBye(func() {
 		callLog.Info("Client requested BYE via WebSocket")
-		// Send SIP BYE if dialog is established
-		if dialog != nil {
+		if cfg.Dialog != nil {
 			go func() {
-				if err := dialog.Bye(context.Background()); err != nil {
+				if err := cfg.Dialog.Bye(context.Background()); err != nil {
 					callLog.Warn("Failed to send SIP BYE", zap.Error(err))
 				}
 			}()
@@ -162,7 +184,11 @@ func (c *ActiveCall) StartRTPHandlers() {
 		onConnected := c.OnConnected
 		c.mu.Unlock()
 
-		c.log.Info("Call confirmed (ACK received), starting RTP handlers", zap.String("remote_rtp", c.RemoteRTPAddr.String()))
+		remoteAddrStr := ""
+		if c.RemoteRTPAddr != nil {
+			remoteAddrStr = c.RemoteRTPAddr.String()
+		}
+		c.log.Info("Call confirmed (ACK received), starting RTP handlers", zap.String("remote_rtp", remoteAddrStr))
 
 		if onConnected != nil {
 			onConnected()
@@ -176,35 +202,26 @@ func (c *ActiveCall) StartRTPHandlers() {
 				c.log.Warn("Media timeout triggered EndCall")
 				c.EndCall()
 			}, func(digit string, duration uint16, end bool) {
-				if end {
+				if end && c.AudioBridge != nil {
 					c.AudioBridge.BroadcastDTMF(digit, int(duration))
 				}
 			})
 			return nil
 		})
 
-		wsCodec := c.AudioBridge.WsCodec()
-		actualWsCodec := wsCodec
-		if wsCodec == string(audio.CodecPass) {
-			actualWsCodec = string(c.NegotiatedStream.Codec.Name)
+		wsCodec := ""
+		if c.AudioBridge != nil {
+			wsCodec = c.AudioBridge.WsCodec()
 		}
 
-		bytesPerSample := 2 // Default for L16
-		if actualWsCodec == string(audio.CodecPCMU) || actualWsCodec == string(audio.CodecPCMA) {
-			bytesPerSample = 1
+		// Setup Outbound Path: AudioBridge -> RTPWriter (Packetizer consolidated directly into StartWriter)
+		audioChan := make(chan []byte, 100)
+		if c.AudioBridge != nil {
+			c.AudioBridge.SetAudioOutput(audioChan)
 		}
 
-		// Setup Inbound Path: AudioBridge -> Packetizer -> RTPWriter
-		packetizer := audio.NewPacketizer(c.NegotiatedStream.PTime, c.NegotiatedStream.Codec.SampleRate, bytesPerSample, c.NegotiatedStream.Codec.Channels)
-		c.AudioBridge.SetAudioOutput(packetizer.Input())
-
 		c.g.Go(func() error {
-			packetizer.Run(gCtx)
-			return nil
-		})
-
-		c.g.Go(func() error {
-			rtp.StartWriter(gCtx, c.log, c.RTPStream, c.RemoteRTPAddr, c.NegotiatedStream, packetizer.Output(), c.dtmfSource, wsCodec)
+			rtp.StartWriter(gCtx, c.log, c.RTPStream, c.RemoteRTPAddr, c.NegotiatedStream, audioChan, c.dtmfSource, wsCodec)
 			return nil
 		})
 	})
@@ -228,8 +245,9 @@ func (c *ActiveCall) EndCall() {
 		onDisconnected()
 	}
 
-	// Notify Frontend that the call has ended (audio-wise)
-	c.AudioBridge.BroadcastCallEnded()
+	if c.AudioBridge != nil {
+		c.AudioBridge.BroadcastCallEnded()
+	}
 
 	go c.Shutdown()
 }
@@ -239,7 +257,9 @@ func (c *ActiveCall) EndCall() {
 func (c *ActiveCall) Shutdown() {
 	c.closeOnce.Do(func() {
 		c.log.Info("Shutting down active call")
-		c.cancel() // Kills JitterBuffer, AudioBridge, and any remaining loops
+		if c.cancel != nil {
+			c.cancel() // Kills JitterBuffer, AudioBridge, and any remaining loops
+		}
 
 		if c.g != nil {
 			if err := c.g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
@@ -267,9 +287,12 @@ func (c *ActiveCall) Shutdown() {
 	})
 }
 
-// extractHeaders extracts important SIP headers and stores them.
-func extractHeaders(req *sip.Request) map[string]string {
+// ExtractHeaders extracts important SIP headers and stores them.
+func ExtractHeaders(req *sip.Request) map[string]string {
 	headers := make(map[string]string)
+	if req == nil {
+		return headers
+	}
 
 	// Explicitly capture standard identity headers
 	if h := req.CallID(); h != nil {

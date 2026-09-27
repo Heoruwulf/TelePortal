@@ -127,3 +127,67 @@ func TestCallManager_WaitEmpty(t *testing.T) {
 		}
 	})
 }
+
+func TestCallManager_CRUD(t *testing.T) {
+	t.Parallel()
+
+	log := zap.NewNop()
+	m := metrics.NewNoOpProvider()
+	cm := NewCallManager(log, m)
+
+	c1ID := uuid.New()
+	c1 := &ActiveCall{CallID: "sip-call-1", ID: c1ID}
+	c2ID := uuid.New()
+	c2 := &ActiveCall{CallID: "sip-call-2", ID: c2ID}
+
+	cm.Add(c1)
+	cm.Add(c2)
+
+	stats := cm.Stats()
+	if stats.ActiveCalls != 2 || stats.TotalCalls != 2 {
+		t.Errorf("expected 2 active and total calls, got active=%d total=%d", stats.ActiveCalls, stats.TotalCalls)
+	}
+
+	// Lookup by SIP
+	got, ok := cm.Get("sip-call-1")
+	if !ok || got.CallID != "sip-call-1" {
+		t.Fatalf("expected to find c1 by SIP CallID, got ok=%v", ok)
+	}
+
+	// Lookup by UUID
+	gotUUID, ok := cm.GetByInternalID(c2ID.String())
+	if !ok || gotUUID.CallID != "sip-call-2" {
+		t.Fatalf("expected to find c2 by UUID, got ok=%v", ok)
+	}
+
+	// List active
+	active := cm.ListActiveCalls()
+	if len(active) != 2 {
+		t.Errorf("expected 2 active calls, got %d", len(active))
+	}
+	ids := cm.ListCallIDs()
+	if len(ids) != 2 {
+		t.Errorf("expected 2 call IDs, got %d", len(ids))
+	}
+
+	// Remove c1
+	cm.Remove("sip-call-1")
+	if _, ok := cm.Get("sip-call-1"); ok {
+		t.Errorf("c1 still found after removal")
+	}
+	if _, ok := cm.GetByInternalID(c1ID.String()); ok {
+		t.Errorf("c1 still found by UUID after removal")
+	}
+
+	stats = cm.Stats()
+	if stats.ActiveCalls != 1 || stats.TotalCalls != 2 {
+		t.Errorf("expected 1 active and 2 total calls, got active=%d total=%d", stats.ActiveCalls, stats.TotalCalls)
+	}
+
+	// Remove non-existent
+	cm.Remove("non-existent")
+	stats = cm.Stats()
+	if stats.ActiveCalls != 1 {
+		t.Errorf("active calls changed on non-existent removal")
+	}
+}

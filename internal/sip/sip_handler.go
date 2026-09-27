@@ -43,18 +43,17 @@ import (
 
 // SIPHandler processes incoming SIP requests.
 type SIPHandler struct {
-	cache              cache.Cache
-	metrics            metrics.Provider
-	log                *zap.Logger
-	dialogUA           *sipgo.DialogUA
-	callManager        *call.CallManager
-	rtpManager         *rtp.RTPManager
-	config             *config.CoreConfig
-	isReady            *atomic.Bool
-	audioBridgeFactory call.AudioBridgeFactory
-	instanceURL        string
-	rtpBindIP          net.IP
-	rtpExternalIP      net.IP
+	publisher     cache.EventPublisher
+	metrics       metrics.Provider
+	log           *zap.Logger
+	dialogUA      *sipgo.DialogUA
+	callManager   *call.CallManager
+	rtpManager    *rtp.RTPManager
+	config        *config.CoreConfig
+	isReady       *atomic.Bool
+	instanceURL   string
+	rtpBindIP     net.IP
+	rtpExternalIP net.IP
 }
 
 // NewSIPHandler creates a new SIP request handler.
@@ -63,28 +62,26 @@ func NewSIPHandler(
 	dialogUA *sipgo.DialogUA,
 	cm *call.CallManager,
 	rm *rtp.RTPManager,
-	ca cache.Cache,
+	pub cache.EventPublisher,
 	m metrics.Provider,
 	instanceURL string,
 	rtpBindIP net.IP,
 	rtpExternalIP net.IP,
 	cfg *config.CoreConfig,
 	isReady *atomic.Bool,
-	audioBridgeFactory call.AudioBridgeFactory,
 ) *SIPHandler {
 	return &SIPHandler{
-		log:                log.Named("handler"),
-		dialogUA:           dialogUA,
-		callManager:        cm,
-		rtpManager:         rm,
-		cache:              ca,
-		metrics:            m,
-		instanceURL:        instanceURL,
-		rtpBindIP:          rtpBindIP,
-		rtpExternalIP:      rtpExternalIP,
-		config:             cfg,
-		isReady:            isReady,
-		audioBridgeFactory: audioBridgeFactory,
+		log:           log.Named("handler"),
+		dialogUA:      dialogUA,
+		callManager:   cm,
+		rtpManager:    rm,
+		publisher:     pub,
+		metrics:       m,
+		instanceURL:   instanceURL,
+		rtpBindIP:     rtpBindIP,
+		rtpExternalIP: rtpExternalIP,
+		config:        cfg,
+		isReady:       isReady,
 	}
 }
 
@@ -210,15 +207,19 @@ func (h *SIPHandler) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 	// Create and store the active call state
 	activeCall := call.NewActiveCall(
 		h.log,
-		dialog,
-		rtpStream,
-		req,
-		selectedStream,
-		h.config.Audio.JitterBufferMinPacketCount,
 		h.metrics,
-		h.audioBridgeFactory,
+		call.CallConfig{
+			CallID:         callID,
+			Headers:        call.ExtractHeaders(req),
+			Dialog:         dialog,
+			RTPStream:      rtpStream,
+			RemoteRTPAddr:  remoteRTPAddr,
+			StreamInfo:     selectedStream,
+			RecordingPath:  h.config.Audio.RecordingPath,
+			WsCodec:        h.config.Audio.WebSocketCodec,
+			MinPacketCount: h.config.Audio.JitterBufferMinPacketCount,
+		},
 	)
-	activeCall.RemoteRTPAddr = remoteRTPAddr
 
 	// Set cleanup callback to ensure resources are released when the call is fully done
 	activeCall.OnFinished = func() {
@@ -240,7 +241,7 @@ func (h *SIPHandler) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 	}
 
 	activeCall.OnConnected = func() {
-		if h.cache == nil {
+		if h.publisher == nil {
 			return
 		}
 		event := api.CallEvent{
@@ -252,13 +253,13 @@ func (h *SIPHandler) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 			Metadata:     activeCall.Headers,
 		}
 		data, _ := json.Marshal(event)
-		if err := h.cache.Publish(context.Background(), api.RedisChannelCallEvents, data); err != nil {
+		if err := h.publisher(context.Background(), api.RedisChannelCallEvents, data); err != nil {
 			h.log.Error("Failed to publish connected event", zap.Error(err))
 		}
 	}
 
 	activeCall.OnDisconnected = func() {
-		if h.cache == nil {
+		if h.publisher == nil {
 			return
 		}
 		event := api.CallEvent{
@@ -270,7 +271,7 @@ func (h *SIPHandler) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 			Metadata:     activeCall.Headers,
 		}
 		data, _ := json.Marshal(event)
-		if err := h.cache.Publish(context.Background(), api.RedisChannelCallEvents, data); err != nil {
+		if err := h.publisher(context.Background(), api.RedisChannelCallEvents, data); err != nil {
 			h.log.Error("Failed to publish disconnected event", zap.Error(err))
 		}
 	}

@@ -29,6 +29,8 @@ import (
 
 	"github.com/heoruwulf/teleportal/internal/audio"
 	"github.com/heoruwulf/teleportal/internal/call"
+	"github.com/heoruwulf/teleportal/internal/platform/cache"
+	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
 	pkgapi "github.com/heoruwulf/teleportal/pkg/api"
 	"github.com/pion/rtp"
@@ -36,22 +38,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// Publisher interface to abstract Redis publishing
-type Publisher interface {
-	Publish(ctx context.Context, channel string, message any) error
-}
-
 // CallManager handles the lifecycle of WebRTC calls and publishes events to Redis.
 type CallManager struct {
 	log       *zap.Logger
-	publisher Publisher
+	publisher cache.EventPublisher
 	cm        *call.CallManager
-	factory   call.AudioBridgeFactory
 	api       *webrtc.API
 }
 
 // NewCallManager creates a new WebRTC CallManager.
-func NewCallManager(log *zap.Logger, p Publisher, cm *call.CallManager, factory call.AudioBridgeFactory) *CallManager {
+func NewCallManager(log *zap.Logger, p cache.EventPublisher, cm *call.CallManager) *CallManager {
 	me, err := NewMediaEngine()
 	if err != nil {
 		log.Fatal("Failed to create WebRTC MediaEngine", zap.Error(err))
@@ -63,7 +59,6 @@ func NewCallManager(log *zap.Logger, p Publisher, cm *call.CallManager, factory 
 		log:       log.Named("webrtc_manager"),
 		publisher: p,
 		cm:        cm,
-		factory:   factory,
 		api:       api,
 	}
 }
@@ -90,7 +85,7 @@ func (m *CallManager) HandleInboundCall(ctx context.Context, callID, wsBaseURL s
 	}
 
 	if m.publisher != nil {
-		if err := m.publisher.Publish(ctx, pkgapi.RedisChannelWebRTCCallEvents, data); err != nil {
+		if err := m.publisher(ctx, pkgapi.RedisChannelWebRTCCallEvents, data); err != nil {
 			m.log.Error("Failed to publish WebRTC call event", zap.Error(err))
 			return "", err
 		}
@@ -134,21 +129,40 @@ func (m *CallManager) ProcessSignaling(ctx context.Context, callID, wsBaseURL st
 		},
 	}
 
-	audioInput := make(chan rtpdefs.RTPPacket, 50)
-	bridge := m.factory(ctx, m.log, audioInput, callID, streamInfo)
-	bridge.Start()
-
-	activeCall := &call.ActiveCall{
-		ID:          uid,
-		CallID:      callID,
-		AudioBridge: bridge,
+	var mp metrics.Provider = metrics.NewNoOpProvider()
+	if m.cm != nil && m.cm.Metrics() != nil {
+		mp = m.cm.Metrics()
 	}
+	audioInput := make(chan rtpdefs.RTPPacket, 50)
+	activeCall := call.NewActiveCall(
+		m.log,
+		mp,
+		call.CallConfig{
+			ID:         uid,
+			CallID:     callID,
+			StreamInfo: streamInfo,
+			AudioInput: audioInput,
+		},
+	)
+	bridge := activeCall.AudioBridge
 	m.cm.Add(activeCall)
 
 	pc, err := m.api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		return nil, fmt.Errorf("creating peer connection: %w", err)
 	}
+
+	activeCall.OnFinished = func() {
+		_ = pc.Close()
+	}
+
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		m.log.Info("WebRTC connection state changed", zap.String("call_id", callID), zap.String("state", state.String()))
+		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
+			m.cm.Remove(callID)
+			_ = pc.Close()
+		}
+	})
 
 	// Create local track for outbound audio
 	trackLocal, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: mimeType, ClockRate: uint32(sampleRate)}, "audio", "pion")

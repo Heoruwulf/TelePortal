@@ -115,7 +115,7 @@ func TestStereoRecorder_InitialCapacity(t *testing.T) {
 	}
 	defer r.Close()
 
-	expectedCap := sampleRate / 10
+	expectedCap := (sampleRate * 2) / 10
 	if cap(r.leftBuf) > expectedCap {
 		t.Errorf("leftBuf initial capacity too large: got %d, want <= %d", cap(r.leftBuf), expectedCap)
 	}
@@ -175,21 +175,6 @@ func TestStereoRecorder_SilenceHandling(t *testing.T) {
 		}
 		if buf.Data[i*2+1] != 0 {
 			t.Errorf("sample %d Right: expected 0, got %d", i, buf.Data[i*2+1])
-		}
-	}
-}
-
-func TestBToI(t *testing.T) {
-	t.Parallel()
-	data := []byte{0x01, 0x00, 0xff, 0xff} // 1, -1 in Little Endian
-	expected := []int{1, -1}
-	got := bToI(data)
-	if len(got) != len(expected) {
-		t.Fatalf("length mismatch: got %d, want %d", len(got), len(expected))
-	}
-	for i := range got {
-		if got[i] != expected[i] {
-			t.Errorf("at %d: got %d, want %d", i, got[i], expected[i])
 		}
 	}
 }

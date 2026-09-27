@@ -25,22 +25,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Cache defines the interface for a caching mechanism.
-type Cache interface {
-	Set(ctx context.Context, key string, value any, expiration time.Duration) error
-	Get(ctx context.Context, key string) (string, error)
-	Del(ctx context.Context, key string) error
-	Publish(ctx context.Context, channel string, message any) error
-	Close() error
-}
+// EventPublisher is a function that publishes an event to a Redis channel.
+type EventPublisher func(ctx context.Context, channel string, message any) error
 
-// RedisCache implements the Cache interface using Redis.
-type RedisCache struct {
-	client *redis.Client
-}
-
-// NewRedisCache creates a new RedisCache.
-func NewRedisCache(addr string, password string, db int) (*RedisCache, error) {
+// NewClient creates a new Redis client and validates the connection with a ping.
+func NewClient(addr string, password string, db int) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: password,
@@ -54,25 +43,15 @@ func NewRedisCache(addr string, password string, db int) (*RedisCache, error) {
 		return nil, fmt.Errorf("failed to ping redis: %w", err)
 	}
 
-	return &RedisCache{client: client}, nil
+	return client, nil
 }
 
-func (r *RedisCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
-	return r.client.Set(ctx, key, value, expiration).Err()
-}
-
-func (r *RedisCache) Get(ctx context.Context, key string) (string, error) {
-	return r.client.Get(ctx, key).Result()
-}
-
-func (r *RedisCache) Del(ctx context.Context, key string) error {
-	return r.client.Del(ctx, key).Err()
-}
-
-func (r *RedisCache) Publish(ctx context.Context, channel string, message any) error {
-	return r.client.Publish(ctx, channel, message).Err()
-}
-
-func (r *RedisCache) Close() error {
-	return r.client.Close()
+// PublisherFromClient returns an EventPublisher backed by a redis.Client.
+func PublisherFromClient(client *redis.Client) EventPublisher {
+	if client == nil {
+		return nil
+	}
+	return func(ctx context.Context, channel string, message any) error {
+		return client.Publish(ctx, channel, message).Err()
+	}
 }

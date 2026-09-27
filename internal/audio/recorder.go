@@ -19,7 +19,6 @@ package audio
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,11 +40,11 @@ type StereoRecorder struct {
 
 	// 8 bytes
 	log      *zap.Logger
-	leftCh   chan []int
-	rightCh  chan []int
+	leftCh   chan []byte
+	rightCh  chan []byte
 	cancel   context.CancelFunc
-	leftBuf  []int
-	rightBuf []int
+	leftBuf  []byte
+	rightBuf []byte
 
 	// --- Scalar / Non-pointer fields ---
 
@@ -77,12 +76,12 @@ func NewStereoRecorder(ctx context.Context, log *zap.Logger, recordingPath, call
 		sampleRate: sampleRate,
 		filePath:   fullPath,
 		callID:     callID,
-		leftCh:     make(chan []int, 100), // Buffer ~2 seconds of audio at 20ms ptime
-		rightCh:    make(chan []int, 100),
+		leftCh:     make(chan []byte, 100), // Buffer ~2 seconds of audio at 20ms ptime
+		rightCh:    make(chan []byte, 100),
 		ctx:        ctx,
 		cancel:     cancel,
-		leftBuf:    make([]int, 0, sampleRate/10), // Pre-allocate 100ms to reduce baseline memory footprint
-		rightBuf:   make([]int, 0, sampleRate/10),
+		leftBuf:    make([]byte, 0, (sampleRate*2)/10), // Pre-allocate 100ms 16-bit PCM bytes
+		rightBuf:   make([]byte, 0, (sampleRate*2)/10),
 	}
 
 	r.wg.Add(1)
@@ -91,39 +90,41 @@ func NewStereoRecorder(ctx context.Context, log *zap.Logger, recordingPath, call
 	return r, nil
 }
 
-// PushLeft adds mono samples to the left channel (Rx).
+// PushLeft adds mono 16-bit PCM samples to the left channel (Rx).
 func (r *StereoRecorder) PushLeft(data []byte) {
-	if r == nil {
+	if r == nil || len(data) == 0 {
 		return
 	}
-	samples := bToI(data)
+	buf := audiopool.GetBuffer(len(data))
+	copy(buf, data)
 	select {
-	case r.leftCh <- samples:
-		r.log.Debug("PushLeft: queued samples", zap.Int("count", len(samples)))
+	case r.leftCh <- buf:
+		r.log.Debug("PushLeft: queued samples", zap.Int("bytes", len(buf)))
 	case <-r.ctx.Done():
-		audiopool.PutIntBuffer(samples)
+		audiopool.PutBuffer(buf)
 	default:
 		// Drop samples if the recorder is falling behind
 		r.log.Warn("PushLeft: dropping samples, queue full")
-		audiopool.PutIntBuffer(samples)
+		audiopool.PutBuffer(buf)
 	}
 }
 
-// PushRight adds mono samples to the right channel (Tx).
+// PushRight adds mono 16-bit PCM samples to the right channel (Tx).
 func (r *StereoRecorder) PushRight(data []byte) {
-	if r == nil {
+	if r == nil || len(data) == 0 {
 		return
 	}
-	samples := bToI(data)
+	buf := audiopool.GetBuffer(len(data))
+	copy(buf, data)
 	select {
-	case r.rightCh <- samples:
-		r.log.Debug("PushRight: queued samples", zap.Int("count", len(samples)))
+	case r.rightCh <- buf:
+		r.log.Debug("PushRight: queued samples", zap.Int("bytes", len(buf)))
 	case <-r.ctx.Done():
-		audiopool.PutIntBuffer(samples)
+		audiopool.PutBuffer(buf)
 	default:
 		// Drop samples if the recorder is falling behind
 		r.log.Warn("PushRight: dropping samples, queue full")
-		audiopool.PutIntBuffer(samples)
+		audiopool.PutBuffer(buf)
 	}
 }
 
@@ -173,13 +174,13 @@ func (r *StereoRecorder) run() {
 		drainLoop:
 			for {
 				select {
-				case samples := <-r.leftCh:
-					r.leftBuf = append(r.leftBuf, samples...)
-					audiopool.PutIntBuffer(samples)
+				case buf := <-r.leftCh:
+					r.leftBuf = append(r.leftBuf, buf...)
+					audiopool.PutBuffer(buf)
 					r.process(w)
-				case samples := <-r.rightCh:
-					r.rightBuf = append(r.rightBuf, samples...)
-					audiopool.PutIntBuffer(samples)
+				case buf := <-r.rightCh:
+					r.rightBuf = append(r.rightBuf, buf...)
+					audiopool.PutBuffer(buf)
 					r.process(w)
 				default:
 					break drainLoop
@@ -188,13 +189,13 @@ func (r *StereoRecorder) run() {
 			// Final flush
 			r.flush(w)
 			return
-		case samples := <-r.leftCh:
-			r.leftBuf = append(r.leftBuf, samples...)
-			audiopool.PutIntBuffer(samples)
+		case buf := <-r.leftCh:
+			r.leftBuf = append(r.leftBuf, buf...)
+			audiopool.PutBuffer(buf)
 			r.process(w)
-		case samples := <-r.rightCh:
-			r.rightBuf = append(r.rightBuf, samples...)
-			audiopool.PutIntBuffer(samples)
+		case buf := <-r.rightCh:
+			r.rightBuf = append(r.rightBuf, buf...)
+			audiopool.PutBuffer(buf)
 			r.process(w)
 		case <-ticker.C:
 			// Handle drift/silence if one side hasn't sent audio for a while
@@ -205,113 +206,96 @@ func (r *StereoRecorder) run() {
 
 func (r *StereoRecorder) process(w *FastWavWriter) {
 	// Interleave samples as long as we have data for both channels
-	minLen := min(len(r.rightBuf), len(r.leftBuf))
+	minBytes := min(len(r.rightBuf), len(r.leftBuf))
+	minBytes -= minBytes % 2 // Align to 16-bit sample boundary
 
-	if minLen == 0 {
+	if minBytes == 0 {
 		return
 	}
 
-	r.log.Debug("process: writing interleaved samples", zap.Int("pairs", minLen))
-	r.writeInterleaved(w, minLen)
+	r.log.Debug("process: writing interleaved samples", zap.Int("bytes", minBytes))
+	r.writeInterleaved(w, minBytes)
 }
 
 func (r *StereoRecorder) handleSilence(w *FastWavWriter) {
 	// If one buffer is much larger than the other, it means the other side is silent or lagging.
 	// We fill with zeros to keep them aligned.
-	// A threshold of 500ms seems reasonable.
-	threshold := r.sampleRate / 2
+	// A threshold of 500ms (sampleRate samples * 2 bytes/sample)
+	threshold := r.sampleRate
 
 	if len(r.leftBuf)-len(r.rightBuf) > threshold {
 		count := len(r.leftBuf) - len(r.rightBuf)
-		padding := audiopool.GetIntBuffer(count)
-		for i := range count {
-			padding[i] = 0
-		}
+		count -= count % 2
+		padding := audiopool.GetBuffer(count)
+		clear(padding)
 		r.rightBuf = append(r.rightBuf, padding...)
-		audiopool.PutIntBuffer(padding)
+		audiopool.PutBuffer(padding)
 		r.process(w)
 	} else if len(r.rightBuf)-len(r.leftBuf) > threshold {
 		count := len(r.rightBuf) - len(r.leftBuf)
-		padding := audiopool.GetIntBuffer(count)
-		for i := range count {
-			padding[i] = 0
-		}
+		count -= count % 2
+		padding := audiopool.GetBuffer(count)
+		clear(padding)
 		r.leftBuf = append(r.leftBuf, padding...)
-		audiopool.PutIntBuffer(padding)
+		audiopool.PutBuffer(padding)
 		r.process(w)
 	}
 }
 
 func (r *StereoRecorder) flush(w *FastWavWriter) {
 	// Flush remaining samples by padding the shorter buffer with zeros
-	maxLen := max(len(r.rightBuf), len(r.leftBuf))
+	maxBytes := max(len(r.rightBuf), len(r.leftBuf))
+	maxBytes -= maxBytes % 2
 
-	if maxLen == 0 {
+	if maxBytes == 0 {
 		r.log.Debug("flush: no remaining samples to flush")
 		return
 	}
 
-	r.log.Debug("flush: padding and writing remaining samples", zap.Int("samples", maxLen))
+	r.log.Debug("flush: padding and writing remaining samples", zap.Int("bytes", maxBytes))
 
-	if len(r.leftBuf) < maxLen {
-		count := maxLen - len(r.leftBuf)
-		padding := audiopool.GetIntBuffer(count)
-		for i := range count {
-			padding[i] = 0
-		}
+	if len(r.leftBuf) < maxBytes {
+		count := maxBytes - len(r.leftBuf)
+		padding := audiopool.GetBuffer(count)
+		clear(padding)
 		r.leftBuf = append(r.leftBuf, padding...)
-		audiopool.PutIntBuffer(padding)
+		audiopool.PutBuffer(padding)
 	}
-	if len(r.rightBuf) < maxLen {
-		count := maxLen - len(r.rightBuf)
-		padding := audiopool.GetIntBuffer(count)
-		for i := range count {
-			padding[i] = 0
-		}
+	if len(r.rightBuf) < maxBytes {
+		count := maxBytes - len(r.rightBuf)
+		padding := audiopool.GetBuffer(count)
+		clear(padding)
 		r.rightBuf = append(r.rightBuf, padding...)
-		audiopool.PutIntBuffer(padding)
+		audiopool.PutBuffer(padding)
 	}
 
-	r.writeInterleaved(w, maxLen)
+	r.writeInterleaved(w, maxBytes)
 }
 
-func (r *StereoRecorder) writeInterleaved(w *FastWavWriter, count int) {
-	interleaved := audiopool.GetIntBuffer(count * 2)
-	defer audiopool.PutIntBuffer(interleaved)
-
-	for i := range count {
-		interleaved[i*2] = r.leftBuf[i]
-		interleaved[i*2+1] = r.rightBuf[i]
-	}
-
-	// Allocate bytes from pool (count * 2 channels * 2 bytes/sample)
-	byteLen := count * 4
+func (r *StereoRecorder) writeInterleaved(w *FastWavWriter, byteCount int) {
+	sampleCount := byteCount / 2
+	byteLen := sampleCount * 4 // 2 channels * 2 bytes/sample
 	byteBuf := audiopool.GetBuffer(byteLen)
 	defer audiopool.PutBuffer(byteBuf)
 
-	packIntsToBytes(interleaved, byteBuf)
+	// Direct zero-conversion 2-byte sample interleaving
+	for i := range sampleCount {
+		// Left channel 16-bit sample (2 bytes)
+		byteBuf[i*4] = r.leftBuf[i*2]
+		byteBuf[i*4+1] = r.leftBuf[i*2+1]
+		// Right channel 16-bit sample (2 bytes)
+		byteBuf[i*4+2] = r.rightBuf[i*2]
+		byteBuf[i*4+3] = r.rightBuf[i*2+1]
+	}
 
 	if _, err := w.Write(byteBuf); err != nil {
 		r.log.Error("Failed to write to WAV writer", zap.Error(err))
 	}
 
 	// Remove processed samples by shifting remaining data to the front
-	// This avoids allocating new underlying arrays over time
-	nLeft := copy(r.leftBuf, r.leftBuf[count:])
+	nLeft := copy(r.leftBuf, r.leftBuf[byteCount:])
 	r.leftBuf = r.leftBuf[:nLeft]
 
-	nRight := copy(r.rightBuf, r.rightBuf[count:])
+	nRight := copy(r.rightBuf, r.rightBuf[byteCount:])
 	r.rightBuf = r.rightBuf[:nRight]
-}
-
-// bToI converts L16 LE bytes to int samples.
-func bToI(data []byte) []int {
-	if len(data) == 0 {
-		return nil
-	}
-	samples := audiopool.GetIntBuffer(len(data) / 2)
-	for i := range samples {
-		samples[i] = int(int16(binary.LittleEndian.Uint16(data[i*2:])))
-	}
-	return samples
 }

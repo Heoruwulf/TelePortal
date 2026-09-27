@@ -31,6 +31,7 @@ import (
 	"github.com/heoruwulf/teleportal/internal/call"
 	"github.com/heoruwulf/teleportal/internal/platform/config"
 	"github.com/heoruwulf/teleportal/internal/platform/metrics"
+	teleportalwebrtc "github.com/heoruwulf/teleportal/internal/webrtc"
 	pkgapi "github.com/heoruwulf/teleportal/pkg/api"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -45,11 +46,6 @@ type TelePortalClaims struct {
 	Admin bool `json:"admin,omitempty"`
 }
 
-// WebRTCManager abstracts the WebRTC call setup
-type WebRTCManager interface {
-	ProcessSignaling(ctx context.Context, callID, wsBaseURL string, offer webrtc.SessionDescription) (*webrtc.SessionDescription, error)
-}
-
 // HTTPHandler handles all HTTP-based requests for the core service,
 // including WebSocket upgrades and API calls.
 type HTTPHandler struct {
@@ -61,7 +57,7 @@ type HTTPHandler struct {
 	// 8 bytes
 	log           *zap.Logger
 	callManager   *call.CallManager
-	webrtcManager WebRTCManager
+	webrtcManager *teleportalwebrtc.CallManager
 	config        *config.CoreConfig
 	isReady       *atomic.Bool
 
@@ -70,7 +66,7 @@ type HTTPHandler struct {
 }
 
 // NewHTTPHandler creates a new handler.
-func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, wm WebRTCManager, m metrics.Provider, cfg *config.CoreConfig, isReady *atomic.Bool) *HTTPHandler {
+func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, wm *teleportalwebrtc.CallManager, m metrics.Provider, cfg *config.CoreConfig, isReady *atomic.Bool) *HTTPHandler {
 	upgrader := websocket.Upgrader{}
 
 	// Override default CheckOrigin if custom CORS origins are configured
@@ -392,4 +388,11 @@ func (h *HTTPHandler) HandleWebRTCConnect(c echo.Context) error {
 
 	h.log.Info("WebRTC signaling client disconnected", zap.String("remote_addr", safeRemoteAddr(ws)))
 	return nil
+}
+
+func safeRemoteAddr(conn *websocket.Conn) string {
+	if conn == nil || conn.RemoteAddr() == nil {
+		return ""
+	}
+	return conn.RemoteAddr().String()
 }

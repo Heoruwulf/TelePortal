@@ -26,10 +26,9 @@ import (
 
 // Packetizer accumulates audio data and emits it in fixed-size chunks.
 type Packetizer struct {
-	// 24 bytes (Pointers clustered for GC scan efficiency)
+	// 16 bytes (Pointers clustered for GC scan efficiency)
 	input  chan []byte
 	output chan []byte
-	buffer []byte
 
 	// 24 bytes
 	ptime        int
@@ -46,7 +45,6 @@ func NewPacketizer(ptime int, sampleRate int, bytesPerSample int, channels int) 
 		bytesPerTick: bytesPerTick,
 		input:        make(chan []byte, 100),
 		output:       make(chan []byte, 100),
-		buffer:       make([]byte, 0, bytesPerTick*2),
 	}
 }
 

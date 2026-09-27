@@ -43,21 +43,7 @@ type DTMFRequest struct {
 	Duration int // in milliseconds
 }
 
-// StartWriter sends RTP packets to the remote endpoint.
-// It consumes payloads from the provided channel, encodes them if necessary, and sends them.
-func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, raddr net.Addr, info audio.Stream, audioSource <-chan []byte, dtmfSource <-chan DTMFRequest, wsCodec string) {
-	log = log.Named("rtp_writer")
-	if stream == nil {
-		log.Error("RTP stream is nil, writer cannot start")
-		return
-	}
-	log.Info("Starting RTP writer",
-		zap.String("codec", string(info.Codec.Name)),
-		zap.Int("ptime", info.PTime),
-	)
-	defer log.Info("RTP writer stopped")
-
-	// RFC 3550: SSRC, sequence number, and timestamp SHOULD be initialized to random values.
+func initRTPHeader(info audio.Stream, log *zap.Logger) ([]byte, uint32, uint16) {
 	var ssrc, timestamp uint32
 	var seqNum uint16
 
@@ -73,36 +59,132 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 		timestamp = binary.BigEndian.Uint32(b[6:10])
 	}
 
-	tsIncrement := info.SamplesPerPacket()
-
-	defer func() {
-		// Drain the channel and return remaining buffers to the pool
-		for l16Payload := range audioSource {
-			audiopool.PutBuffer(l16Payload)
-		}
-	}()
-
-	// Pre-fill static header fields
 	rtpHeader := make([]byte, rtpHeaderSize)
 	rtpHeader[0] = (rtpVersion << 6)
 	rtpHeader[1] = info.Codec.PayloadType
 	binary.BigEndian.PutUint32(rtpHeader[8:12], ssrc)
+	return rtpHeader, timestamp, seqNum
+}
+
+func drainAudioSource(audioSource <-chan []byte) {
+	if audioSource == nil {
+		return
+	}
+	for {
+		select {
+		case buf, ok := <-audioSource:
+			if !ok {
+				return
+			}
+			audiopool.PutBuffer(buf)
+		default:
+			return
+		}
+	}
+}
+
+func encodeOutboundPayload(l16Payload []byte, actualWsCodec, wsCodec string, info audio.Stream) ([]byte, error) {
+	if actualWsCodec == string(info.Codec.Name) {
+		if info.Codec.Name == audio.CodecL16 {
+			switch {
+			case wsCodec == string(audio.CodecPass):
+				return l16Payload, nil
+			case info.Codec.IsBigEndian:
+				return audio.DecodeL16LEToL16BE(l16Payload)
+			default:
+				return l16Payload, nil
+			}
+		}
+		return l16Payload, nil
+	}
+
+	switch info.Codec.Name {
+	case audio.CodecPCMU:
+		return audio.EncodeL16ToPCMU(l16Payload)
+	case audio.CodecPCMA:
+		return audio.EncodeL16ToPCMA(l16Payload)
+	case audio.CodecL16:
+		if info.Codec.IsBigEndian {
+			return audio.DecodeL16LEToL16BE(l16Payload)
+		}
+		return l16Payload, nil
+	case audio.CodecOpus:
+		return nil, fmt.Errorf("opus encoding not implemented")
+	default:
+		return nil, fmt.Errorf("unsupported codec for outbound: %s", info.Codec.Name)
+	}
+}
+
+// StartWriter sends RTP packets to the remote endpoint.
+// It consumes payloads from the provided channel, encodes them if necessary, and sends them.
+func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, raddr net.Addr, info audio.Stream, audioSource <-chan []byte, dtmfSource <-chan DTMFRequest, wsCodec string) {
+	log = log.Named("rtp_writer")
+	if stream == nil {
+		log.Error("RTP stream is nil, writer cannot start")
+		return
+	}
+	log.Info("Starting RTP writer",
+		zap.String("codec", string(info.Codec.Name)),
+		zap.Int("ptime", info.PTime),
+	)
+	defer log.Info("RTP writer stopped")
+
+	rtpHeader, timestamp, seqNum := initRTPHeader(info, log)
+	tsIncrement := info.SamplesPerPacket()
 
 	dtmfGenerator := NewDTMFGenerator(info.Codec.SampleRate, info.PTime)
 	var pendingDTMF [][]byte
 	var currentDTMFTimestamp uint32
 
 	defer func() {
-		// Clean up any remaining DTMF buffers
 		for _, p := range pendingDTMF {
 			audiopool.PutBuffer(p)
 		}
+		drainAudioSource(audioSource)
 	}()
+
+	actualWsCodec := wsCodec
+	if wsCodec == string(audio.CodecPass) {
+		actualWsCodec = string(info.Codec.Name)
+	}
+
+	bytesPerSample := 2
+	if actualWsCodec == string(audio.CodecPCMU) || actualWsCodec == string(audio.CodecPCMA) {
+		bytesPerSample = 1
+	}
+
+	channels := info.Codec.Channels
+	if channels == 0 {
+		channels = 1
+	}
+
+	ptime := info.PTime
+	if ptime == 0 {
+		ptime = 20
+	}
+	sampleRate := info.Codec.SampleRate
+	if sampleRate == 0 {
+		sampleRate = 8000
+	}
+
+	bytesPerTick := (sampleRate * ptime / 1000) * bytesPerSample * channels
+	if bytesPerTick == 0 {
+		bytesPerTick = int(tsIncrement) * bytesPerSample
+	}
+
+	capacity := bytesPerTick * 10
+	ringBuf := make([]byte, capacity)
+	head, tail := 0, 0
+	count := 0
+
+	ticker := time.NewTicker(time.Duration(ptime) * time.Millisecond)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+
 		case req, ok := <-dtmfSource:
 			if !ok {
 				dtmfSource = nil
@@ -115,23 +197,35 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 
 			log.Debug("Injecting DTMF", zap.String("digit", req.Digit), zap.Int("duration", req.Duration))
 
-			// If we were already sending DTMF, return those buffers to the pool before overwriting
 			for _, p := range pendingDTMF {
 				audiopool.PutBuffer(p)
 			}
 			pendingDTMF = dtmfGenerator.Generate(req.Digit, req.Duration)
-
-			// Set the timestamp for this entire DTMF event
 			timestamp += tsIncrement
 			currentDTMFTimestamp = timestamp
 
-		case l16Payload, ok := <-audioSource:
+		case data, ok := <-audioSource:
 			if !ok {
-				return
+				audioSource = nil
+				continue
 			}
+			n := len(data)
+			if n > capacity-count {
+				n = max(capacity-count, 0)
+			}
+			if n > 0 {
+				firstPart := min(capacity-tail, n)
+				copy(ringBuf[tail:tail+firstPart], data[:firstPart])
+				if n > firstPart {
+					copy(ringBuf[0:n-firstPart], data[firstPart:n])
+				}
+				tail = (tail + n) % capacity
+				count += n
+			}
+			audiopool.PutBuffer(data)
 
+		case <-ticker.C:
 			if len(pendingDTMF) > 0 {
-				// Send one DTMF packet instead of audio
 				p := pendingDTMF[0]
 				pendingDTMF = pendingDTMF[1:]
 
@@ -150,60 +244,38 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 				audiopool.PutBuffer(packet)
 				audiopool.PutBuffer(p)
 
-				// We discard the audio payload to ensure it is suppressed
-				audiopool.PutBuffer(l16Payload)
-
-				// Advance the main audio timestamp so that when DTMF finishes, audio resumes seamlessly
 				timestamp += tsIncrement
-
-				// Restore PayloadType in header for when audio resumes
 				rtpHeader[1] = info.Codec.PayloadType
+
+				if count >= bytesPerTick {
+					head = (head + bytesPerTick) % capacity
+					count -= bytesPerTick
+				}
 				continue
 			}
 
-			// Encode if necessary
-			var payload []byte
-			var err error
-
-			actualWsCodec := wsCodec
-			if wsCodec == string(audio.CodecPass) {
-				actualWsCodec = string(info.Codec.Name)
+			if count == 0 {
+				continue
 			}
 
-			if actualWsCodec == string(info.Codec.Name) {
-				// Pass-through or matched codec
-				if info.Codec.Name == audio.CodecL16 {
-					switch {
-					case wsCodec == string(audio.CodecPass):
-						payload = l16Payload // Already BE if PASS mode
-					case info.Codec.IsBigEndian:
-						payload, err = audio.DecodeL16LEToL16BE(l16Payload)
-					default:
-						payload = l16Payload
-					}
-				} else {
-					payload = l16Payload
-				}
+			l16Payload := audiopool.GetBuffer(bytesPerTick)
+			firstPart := min(capacity-head, min(bytesPerTick, count))
+			copy(l16Payload[:firstPart], ringBuf[head:head+firstPart])
+			if bytesPerTick > firstPart && count > firstPart {
+				secondPart := min(bytesPerTick-firstPart, count-firstPart)
+				copy(l16Payload[firstPart:firstPart+secondPart], ringBuf[0:secondPart])
+			}
+			if count < bytesPerTick {
+				clear(l16Payload[count:])
+				head = (head + count) % capacity
+				count = 0
 			} else {
-				// Transcoding required
-				switch info.Codec.Name {
-				case audio.CodecPCMU:
-					payload, err = audio.EncodeL16ToPCMU(l16Payload)
-				case audio.CodecPCMA:
-					payload, err = audio.EncodeL16ToPCMA(l16Payload)
-				case audio.CodecL16:
-					if info.Codec.IsBigEndian {
-						payload, err = audio.DecodeL16LEToL16BE(l16Payload) // LE to BE
-					} else {
-						payload = l16Payload
-					}
-				case audio.CodecOpus:
-					err = fmt.Errorf("opus encoding not implemented")
-				default:
-					err = fmt.Errorf("unsupported codec for outbound: %s", info.Codec.Name)
-				}
+				head = (head + bytesPerTick) % capacity
+				count -= bytesPerTick
 			}
 
+			// Encode if necessary
+			payload, err := encodeOutboundPayload(l16Payload, actualWsCodec, wsCodec, info)
 			if err != nil {
 				log.Warn("Failed to encode audio for RTP", zap.Error(err))
 				audiopool.PutBuffer(l16Payload)
@@ -222,15 +294,13 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 
 			if _, err := stream.WriteTo(packet, raddr); err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// continue after cleanup
+					// continue
 				} else {
 					log.Error("Failed to write RTP packet", zap.Error(err))
 				}
 			}
 
-			// Return all buffers to the pool
 			audiopool.PutBuffer(packet)
-			// Check if payload is a separate buffer (from encoders) or same as l16Payload (L16 passthrough)
 			if len(payload) > 0 && &payload[0] != &l16Payload[0] {
 				audiopool.PutBuffer(payload)
 			}

@@ -39,8 +39,9 @@ type RTPManager struct {
 	mu sync.Mutex
 
 	// 2 bytes
-	portMin uint16
-	portMax uint16
+	portMin  uint16
+	portMax  uint16
+	nextPort uint16
 }
 
 // NewRTPManager creates a manager for a given port range.
@@ -48,11 +49,18 @@ func NewRTPManager(log *zap.Logger, portMin, portMax uint16) (*RTPManager, error
 	if portMin < 1024 || portMax < 1024 || portMax <= portMin {
 		return nil, fmt.Errorf("invalid port range: %d-%d", portMin, portMax)
 	}
+
+	startPort := portMin
+	if startPort%2 != 0 {
+		startPort++
+	}
+
 	return &RTPManager{
-		log:     log.Named("rtp_manager"),
-		portMin: portMin,
-		portMax: portMax,
-		ports:   make(map[uint16]bool),
+		log:      log.Named("rtp_manager"),
+		portMin:  portMin,
+		portMax:  portMax,
+		nextPort: startPort,
+		ports:    make(map[uint16]bool),
 	}, nil
 }
 
@@ -62,8 +70,29 @@ func (m *RTPManager) CreateListener(listenIP net.IP) (net.PacketConn, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for port := m.portMin; port <= m.portMax; port += 2 {
-		if _, inUse := m.ports[port]; inUse {
+	firstEven := m.portMin
+	if firstEven%2 != 0 {
+		firstEven++
+	}
+	lastEven := m.portMax
+	if lastEven%2 != 0 {
+		lastEven--
+	}
+	if firstEven > lastEven {
+		return nil, fmt.Errorf("no valid even RTP ports in range %d-%d", m.portMin, m.portMax)
+	}
+
+	numEvenPorts := int((lastEven-firstEven)/2) + 1
+	if m.nextPort < firstEven || m.nextPort > lastEven {
+		m.nextPort = firstEven
+	}
+	startOffset := int((m.nextPort - firstEven) / 2)
+
+	for i := range numEvenPorts {
+		idx := (startOffset + i) % numEvenPorts
+		port := firstEven + uint16(idx*2)
+
+		if m.ports[port] {
 			continue
 		}
 
@@ -86,6 +115,7 @@ func (m *RTPManager) CreateListener(listenIP net.IP) (net.PacketConn, error) {
 		m.log.Debug("Successfully created RTP listener", zap.String("addr", localAddr))
 
 		m.ports[port] = true
+		m.nextPort = firstEven + uint16(((idx+1)%numEvenPorts)*2)
 		return conn, nil
 	}
 

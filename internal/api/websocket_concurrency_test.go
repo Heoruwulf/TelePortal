@@ -24,40 +24,13 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
+	"github.com/heoruwulf/teleportal/internal/audio"
 	"github.com/heoruwulf/teleportal/internal/call"
 	"github.com/heoruwulf/teleportal/internal/platform/config"
 	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 )
-
-type mockAudioBridge struct {
-	reserved  bool
-	hasClient bool
-}
-
-func (m *mockAudioBridge) Start()                                             {}
-func (m *mockAudioBridge) Wait() error                                        { return nil }
-func (m *mockAudioBridge) BroadcastCallEnded()                                {}
-func (m *mockAudioBridge) BroadcastDTMF(digit string, duration int)           {}
-func (m *mockAudioBridge) SetOnDTMF(handler func(digit string, duration int)) {}
-func (m *mockAudioBridge) SetOnBye(handler func())                            {}
-func (m *mockAudioBridge) AddClient(conn *websocket.Conn)                     { m.hasClient = true; m.reserved = false }
-func (m *mockAudioBridge) ReadPump(conn *websocket.Conn)                      {}
-func (m *mockAudioBridge) RemoveClient(conn *websocket.Conn)                  { m.hasClient = false; m.reserved = false }
-func (m *mockAudioBridge) SetAudioOutput(ch chan<- []byte)                    {}
-func (m *mockAudioBridge) WsCodec() string                                    { return "L16" }
-func (m *mockAudioBridge) CloseAll()                                          { m.hasClient = false; m.reserved = false }
-
-func (m *mockAudioBridge) TryLock() bool {
-	if m.reserved || m.hasClient {
-		return false
-	}
-	m.reserved = true
-	return true
-}
-func (m *mockAudioBridge) Unlock() { m.reserved = false }
 
 func TestHTTPHandler_HandleUpgrade_Concurrency(t *testing.T) {
 	// We don't call t.Parallel() here because we are testing concurrency control which might be sensitive to timing in some mocks,
@@ -76,7 +49,7 @@ func TestHTTPHandler_HandleUpgrade_Concurrency(t *testing.T) {
 	h.RegisterHandlers(e)
 
 	callID := "test-call"
-	mb := &mockAudioBridge{}
+	mb := call.NewAudioBridge(t.Context(), log, m, nil, callID, audio.Stream{}, "", "")
 	id := uuid.New()
 	ac := &call.ActiveCall{
 		ID:          id,

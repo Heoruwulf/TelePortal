@@ -27,21 +27,17 @@ import (
 	"go.uber.org/zap"
 )
 
-type mockPublisher struct {
-	publishedMessage any
-	publishedChannel string
-}
-
-func (m *mockPublisher) Publish(ctx context.Context, channel string, message any) error {
-	m.publishedChannel = channel
-	m.publishedMessage = message
-	return nil
-}
-
 func TestCallManager_HandleInboundCall(t *testing.T) {
-	mockPub := &mockPublisher{}
+	var publishedMessage any
+	var publishedChannel string
+	mockPub := func(ctx context.Context, channel string, message any) error {
+		publishedChannel = channel
+		publishedMessage = message
+		return nil
+	}
+
 	callManager := call.NewCallManager(zap.NewNop(), metrics.NewNoOpProvider())
-	cm := NewCallManager(zap.NewNop(), mockPub, callManager, nil)
+	cm := NewCallManager(zap.NewNop(), mockPub, callManager)
 
 	internalID, err := cm.HandleInboundCall(context.Background(), "test-call-id", "ws://test")
 	if err != nil {
@@ -52,11 +48,11 @@ func TestCallManager_HandleInboundCall(t *testing.T) {
 		t.Error("expected internalID to be generated, got empty string")
 	}
 
-	if mockPub.publishedChannel != pkgapi.RedisChannelWebRTCCallEvents {
-		t.Errorf("expected channel %s, got %s", pkgapi.RedisChannelWebRTCCallEvents, mockPub.publishedChannel)
+	if publishedChannel != pkgapi.RedisChannelWebRTCCallEvents {
+		t.Errorf("expected channel %s, got %s", pkgapi.RedisChannelWebRTCCallEvents, publishedChannel)
 	}
 
-	if mockPub.publishedMessage == nil {
+	if publishedMessage == nil {
 		t.Error("expected a published message, got nil")
 	}
 }

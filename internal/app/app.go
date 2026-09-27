@@ -36,11 +36,11 @@ import (
 	"github.com/heoruwulf/teleportal/internal/platform/config"
 	"github.com/heoruwulf/teleportal/internal/platform/metrics"
 	"github.com/heoruwulf/teleportal/internal/rtp"
-	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
 	siphandler "github.com/heoruwulf/teleportal/internal/sip"
 	"github.com/heoruwulf/teleportal/internal/webrtc"
 	"github.com/labstack/echo/v4"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
@@ -57,7 +57,7 @@ type App struct {
 	sipServer      *sipgo.Server
 	callManager    *call.CallManager
 	rtpManager     *rtp.RTPManager
-	cache          cache.Cache
+	redisClient    *redis.Client
 	metrics        metrics.Provider
 	isReady        atomic.Bool
 }
@@ -113,15 +113,17 @@ func NewApp(logger *zap.Logger, logAtomicLevel zap.AtomicLevel, config *config.C
 		zap.String("rtp_external_ip", rtpExternalIP.String()),
 	)
 
-	// --- Cache Setup ---
-	var c cache.Cache
+	// --- Redis Setup ---
+	var redisClient *redis.Client
+	var publisher cache.EventPublisher
 	if config.Redis.Address != "" {
 		var err error
-		c, err = cache.NewRedisCache(config.Redis.Address, config.Redis.Password, config.Redis.DB)
+		redisClient, err = cache.NewClient(config.Redis.Address, config.Redis.Password, config.Redis.DB)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create redis cache: %w", err)
+			return nil, fmt.Errorf("failed to create redis client: %w", err)
 		}
-		logger.Info("Redis cache initialized")
+		publisher = cache.PublisherFromClient(redisClient)
+		logger.Info("Redis client initialized")
 	}
 
 	ua, err := sipgo.NewUA()
@@ -169,15 +171,11 @@ func NewApp(logger *zap.Logger, logAtomicLevel zap.AtomicLevel, config *config.C
 		httpServer:     e,
 		callManager:    callManager,
 		rtpManager:     rtpManager,
-		cache:          c,
+		redisClient:    redisClient,
 		metrics:        m,
 	}
 
-	audioBridgeFactory := func(ctx context.Context, log *zap.Logger, audioInput <-chan rtpdefs.RTPPacket, callID string, stream audio.Stream) call.AudioBridgeInterface {
-		return api.NewAudioBridge(ctx, log, m, audioInput, callID, stream, config.Audio.RecordingPath, config.Audio.WebSocketCodec)
-	}
-
-	webrtcManager := webrtc.NewCallManager(logger, c, callManager, audioBridgeFactory)
+	webrtcManager := webrtc.NewCallManager(logger, publisher, callManager)
 
 	// Register API and WebSocket handlers
 	httpHandler := api.NewHTTPHandler(logger, callManager, webrtcManager, m, config, &app.isReady)
@@ -188,14 +186,13 @@ func NewApp(logger *zap.Logger, logAtomicLevel zap.AtomicLevel, config *config.C
 		dialogUA,
 		callManager,
 		rtpManager,
-		c,
+		publisher,
 		m,
 		config.HTTPServer.PublicURL,
 		rtpBindIP,
 		rtpExternalIP,
 		config,
 		&app.isReady,
-		audioBridgeFactory,
 	)
 	sHandler.RegisterHandlers(sipServer)
 
@@ -303,8 +300,8 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.log.Error("Error closing SIP server", zap.Error(err))
 		return err
 	}
-	if a.cache != nil {
-		_ = a.cache.Close()
+	if a.redisClient != nil {
+		_ = a.redisClient.Close()
 	}
 	return nil
 }

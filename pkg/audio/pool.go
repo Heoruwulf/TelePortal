@@ -71,38 +71,6 @@ var (
 			return make([]byte, SizeDefault)
 		},
 	}
-
-	// Pools for []int slices (used for recording and processing)
-	intPool160 = sync.Pool{
-		New: func() any {
-			return make([]int, Size160)
-		},
-	}
-	intPool320 = sync.Pool{
-		New: func() any {
-			return make([]int, Size320)
-		},
-	}
-	intPool640 = sync.Pool{
-		New: func() any {
-			return make([]int, Size640)
-		},
-	}
-	intPool960 = sync.Pool{
-		New: func() any {
-			return make([]int, Size960)
-		},
-	}
-	intPool1920 = sync.Pool{
-		New: func() any {
-			return make([]int, Size1920) // Interleaved 960
-		},
-	}
-	intPoolDefault = sync.Pool{
-		New: func() any {
-			return make([]int, SizeDefault)
-		},
-	}
 )
 
 // GetBuffer retrieves a byte slice of at least the requested size from a pool.
@@ -152,56 +120,5 @@ func PutBuffer(b []byte) {
 		pool320.Put(b)
 	default:
 		pool160.Put(b)
-	}
-}
-
-// GetIntBuffer retrieves an int slice of at least the requested size from a pool.
-func GetIntBuffer(size int) []int {
-	var b []int
-	switch {
-	case size <= Size160:
-		b = intPool160.Get().([]int)
-	case size <= Size320:
-		b = intPool320.Get().([]int)
-	case size <= Size640:
-		b = intPool640.Get().([]int)
-	case size <= Size960:
-		b = intPool960.Get().([]int)
-	case size <= Size1920:
-		b = intPool1920.Get().([]int)
-	default:
-		b = intPoolDefault.Get().([]int)
-	}
-
-	if cap(b) < size {
-		return make([]int, size)
-	}
-	return b[:size]
-}
-
-// PutIntBuffer returns an int slice to the appropriate pool.
-//
-//lint:ignore SA6002 Profiling confirmed passing slice value is faster than pointer dereferencing here
-func PutIntBuffer(b []int) {
-	if b == nil || cap(b) == 0 {
-		return
-	}
-	// Restore the slice to its full capacity before returning to the pool.
-	b = b[:cap(b)]
-	size := len(b)
-
-	switch {
-	case size >= SizeRTPThreshold: // Hardening: Use same threshold for int buffers
-		intPoolDefault.Put(b)
-	case size >= Size1920:
-		intPool1920.Put(b)
-	case size >= Size960:
-		intPool960.Put(b)
-	case size >= Size640:
-		intPool640.Put(b)
-	case size >= Size320:
-		intPool320.Put(b)
-	default:
-		intPool160.Put(b)
 	}
 }

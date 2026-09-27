@@ -115,65 +115,6 @@ func TestPutBuffer(t *testing.T) {
 	})
 }
 
-func TestGetIntBuffer(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name        string
-		size        int
-		minCap      int
-		expectedLen int
-	}{
-		{"Small 160", Size160, Size160, Size160},
-		{"Medium 320", Size320, Size320, Size320},
-		{"Large 640", Size640, Size640, Size640},
-		{"XLarge 960", Size960, Size960, Size960},
-		{"Interleaved 1920", Size1920, Size1920, Size1920},
-		{"Default 4096", SizeDefault, SizeDefault, SizeDefault},
-		{"Odd size 1000", 1000, Size1920, 1000},
-		{"Very large", 10000, 10000, 10000},
-		{"Zero size", 0, 0, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			b := GetIntBuffer(tt.size)
-			if len(b) != tt.expectedLen {
-				t.Errorf("GetIntBuffer(%d) len = %d; want %d", tt.size, len(b), tt.expectedLen)
-			}
-			if cap(b) < tt.minCap {
-				t.Errorf("GetIntBuffer(%d) cap = %d; want at least %d", tt.size, cap(b), tt.minCap)
-			}
-
-			if len(b) > 0 {
-				b[0] = 42
-				b[len(b)-1] = 24
-			}
-
-			PutIntBuffer(b)
-		})
-	}
-}
-
-func TestPutIntBuffer(t *testing.T) {
-	t.Parallel()
-
-	t.Run("NilBuffer", func(t *testing.T) {
-		t.Parallel()
-		PutIntBuffer(nil)
-	})
-
-	t.Run("Thresholds", func(t *testing.T) {
-		t.Parallel()
-		sizes := []int{Size160, Size320, Size640, Size960, Size1920, SizeDefault}
-		for _, s := range sizes {
-			b := make([]int, s)
-			PutIntBuffer(b)
-		}
-	})
-}
-
 func TestBufferConcurrency(t *testing.T) {
 	t.Parallel()
 
@@ -186,17 +127,15 @@ func TestBufferConcurrency(t *testing.T) {
 			for range iterations {
 				b := GetBuffer(Size320)
 				if len(b) != Size320 {
-					// We can't use t.Errorf here safely from goroutine without sync,
-					// but sync.Pool is thread-safe and this is a stress test.
 					panic("invalid len")
 				}
 				PutBuffer(b)
 
-				ib := GetIntBuffer(Size640)
-				if len(ib) != Size640 {
-					panic("invalid len int")
+				b2 := GetBuffer(Size640)
+				if len(b2) != Size640 {
+					panic("invalid len")
 				}
-				PutIntBuffer(ib)
+				PutBuffer(b2)
 			}
 			done <- true
 		}()

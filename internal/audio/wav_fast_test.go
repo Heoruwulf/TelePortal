@@ -30,42 +30,6 @@ import (
 	"github.com/go-audio/wav"
 )
 
-func TestPackIntsToBytes(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		samples []int
-		want    []byte
-	}{
-		{
-			name:    "positive samples",
-			samples: []int{0x1234, 0x5678},
-			want:    []byte{0x34, 0x12, 0x78, 0x56},
-		},
-		{
-			name:    "negative samples",
-			samples: []int{-0x1234, -1},
-			want:    []byte{0xcc, 0xed, 0xff, 0xff},
-		},
-		{
-			name:    "zero sample",
-			samples: []int{0},
-			want:    []byte{0x00, 0x00},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			out := make([]byte, len(tt.samples)*2)
-			packIntsToBytes(tt.samples, out)
-			if !bytes.Equal(out, tt.want) {
-				t.Errorf("packIntsToBytes() = %x, want %x", out, tt.want)
-			}
-		})
-	}
-}
-
 func TestWriteWavHeader(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
@@ -125,12 +89,10 @@ func TestFastWavWriter(t *testing.T) {
 	}
 
 	// Write 10 samples (interleaved, 2 channels, 2 bytes each = 40 bytes)
-	samples := make([]int, 20)
-	for i := range samples {
-		samples[i] = i
-	}
 	byteBuf := make([]byte, 40)
-	packIntsToBytes(samples, byteBuf)
+	for i := range 20 {
+		binary.LittleEndian.PutUint16(byteBuf[i*2:], uint16(i))
+	}
 
 	if _, err := w.Write(byteBuf); err != nil {
 		t.Fatalf("Write() error = %v", err)
@@ -211,13 +173,11 @@ func BenchmarkWAVEncoding_Legacy(b *testing.B) {
 func BenchmarkWAVEncoding_Fast(b *testing.B) {
 	sampleRate := 16000
 	count := 320 // 20ms at 16kHz
-	interleaved := make([]int, count*2)
-	for i := range interleaved {
-		interleaved[i] = i % 32768
-	}
-
 	byteLen := count * 4
 	byteBuf := make([]byte, byteLen)
+	for i := range count * 2 {
+		binary.LittleEndian.PutUint16(byteBuf[i*2:], uint16(i%32768))
+	}
 
 	mws := &mockWriteSeeker{io.Discard}
 	w := &FastWavWriter{
@@ -228,11 +188,8 @@ func BenchmarkWAVEncoding_Fast(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		packIntsToBytes(interleaved, byteBuf)
 		if _, err := w.Write(byteBuf); err != nil {
 			b.Fatal(err)
 		}
-		// In real usage we don't flush every 20ms, bufio handles it.
-		// But to measure packing + write overhead:
 	}
 }

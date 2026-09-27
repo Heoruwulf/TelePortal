@@ -26,70 +26,29 @@ import (
 	"time"
 
 	"github.com/emiago/sipgo/sip"
-	"github.com/gorilla/websocket"
 	"github.com/heoruwulf/teleportal/internal/audio"
 	"github.com/heoruwulf/teleportal/internal/call"
 	"github.com/heoruwulf/teleportal/internal/platform/metrics"
-	"github.com/heoruwulf/teleportal/internal/rtp/rtpdefs"
 	"github.com/heoruwulf/teleportal/pkg/api"
 	"go.uber.org/zap"
 )
 
-type mockCache struct {
-	publishedMessages []string
-	mu                sync.Mutex
-}
-
-func (m *mockCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
-	return nil
-}
-
-func (m *mockCache) Get(ctx context.Context, key string) (string, error) {
-	return "", nil
-}
-
-func (m *mockCache) Del(ctx context.Context, key string) error {
-	return nil
-}
-
-func (m *mockCache) Publish(ctx context.Context, channel string, message any) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.publishedMessages = append(m.publishedMessages, string(message.([]byte)))
-	return nil
-}
-
-func (m *mockCache) Close() error {
-	return nil
-}
-
-// Add Wait method for mockAudioBridge to implement AudioBridgeInterface
-type mockAudioBridge struct{}
-
-func (m *mockAudioBridge) Start()                                             {}
-func (m *mockAudioBridge) Wait() error                                        { return nil }
-func (m *mockAudioBridge) BroadcastCallEnded()                                {}
-func (m *mockAudioBridge) BroadcastDTMF(digit string, duration int)           {}
-func (m *mockAudioBridge) SetOnDTMF(handler func(digit string, duration int)) {}
-func (m *mockAudioBridge) SetOnBye(handler func())                            {}
-func (m *mockAudioBridge) AddClient(conn *websocket.Conn)                     {}
-func (m *mockAudioBridge) ReadPump(conn *websocket.Conn)                      {}
-func (m *mockAudioBridge) RemoveClient(conn *websocket.Conn)                  {}
-func (m *mockAudioBridge) SetAudioOutput(ch chan<- []byte)                    {}
-func (m *mockAudioBridge) WsCodec() string                                    { return "L16" }
-func (m *mockAudioBridge) CloseAll()                                          {}
-func (m *mockAudioBridge) TryLock() bool                                      { return true }
-func (m *mockAudioBridge) Unlock()                                            {}
-
 func TestSIPNotification(t *testing.T) {
 	log := zap.NewNop()
-	mCache := &mockCache{}
+	var publishedMessages []string
+	var pubMu sync.Mutex
+	mockPub := func(ctx context.Context, channel string, message any) error {
+		pubMu.Lock()
+		defer pubMu.Unlock()
+		publishedMessages = append(publishedMessages, string(message.([]byte)))
+		return nil
+	}
 	m := metrics.NewNoOpProvider()
 	instanceURL := "http://localhost:8080"
 
 	h := &SIPHandler{
 		log:         log,
-		cache:       mCache,
+		publisher:   mockPub,
 		metrics:     m,
 		instanceURL: instanceURL,
 	}
@@ -102,17 +61,14 @@ func TestSIPNotification(t *testing.T) {
 
 	activeCall := call.NewActiveCall(
 		log,
-		nil,
-		nil,
-		req,
-		streamInfo,
-		0,
 		m,
-		func(ctx context.Context, log *zap.Logger, audioInput <-chan rtpdefs.RTPPacket, callID string, stream audio.Stream) call.AudioBridgeInterface {
-			return &mockAudioBridge{}
+		call.CallConfig{
+			CallID:        "test-call-id",
+			Headers:       call.ExtractHeaders(req),
+			RemoteRTPAddr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234},
+			StreamInfo:    streamInfo,
 		},
 	)
-	activeCall.RemoteRTPAddr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}
 
 	// In handleInvite, the hooks are set. Let's simulate that manually as we are testing the hook logic.
 	// We'll use the same logic as in sip_handler.go
@@ -129,7 +85,7 @@ func TestSIPNotification(t *testing.T) {
 			Timestamp:    time.Now(),
 		}
 		data, _ := json.Marshal(event)
-		_ = h.cache.Publish(context.Background(), api.RedisChannelCallEvents, data)
+		_ = h.publisher(context.Background(), api.RedisChannelCallEvents, data)
 	}
 
 	activeCall.OnDisconnected = func() {
@@ -141,33 +97,33 @@ func TestSIPNotification(t *testing.T) {
 			Timestamp:    time.Now(),
 		}
 		data, _ := json.Marshal(event)
-		_ = h.cache.Publish(context.Background(), api.RedisChannelCallEvents, data)
+		_ = h.publisher(context.Background(), api.RedisChannelCallEvents, data)
 	}
 
 	// Trigger Connected
 	activeCall.StartRTPHandlers()
 
-	mCache.mu.Lock()
-	if len(mCache.publishedMessages) != 1 {
-		t.Errorf("Expected 1 message, got %d", len(mCache.publishedMessages))
+	pubMu.Lock()
+	if len(publishedMessages) != 1 {
+		t.Errorf("Expected 1 message, got %d", len(publishedMessages))
 	}
 	var event api.CallEvent
-	json.Unmarshal([]byte(mCache.publishedMessages[0]), &event)
+	_ = json.Unmarshal([]byte(publishedMessages[0]), &event)
 	if event.Event != "connected" {
 		t.Errorf("Expected connected event, got %s", event.Event)
 	}
-	mCache.mu.Unlock()
+	pubMu.Unlock()
 
 	// Trigger Disconnected
 	activeCall.EndCall()
 
-	mCache.mu.Lock()
-	if len(mCache.publishedMessages) != 2 {
-		t.Errorf("Expected 2 messages, got %d", len(mCache.publishedMessages))
+	pubMu.Lock()
+	if len(publishedMessages) != 2 {
+		t.Errorf("Expected 2 messages, got %d", len(publishedMessages))
 	}
-	json.Unmarshal([]byte(mCache.publishedMessages[1]), &event)
+	_ = json.Unmarshal([]byte(publishedMessages[1]), &event)
 	if event.Event != "disconnected" {
 		t.Errorf("Expected disconnected event, got %s", event.Event)
 	}
-	mCache.mu.Unlock()
+	pubMu.Unlock()
 }

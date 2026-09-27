@@ -34,24 +34,23 @@ type CallManagerStats struct {
 
 // CallManager provides a thread-safe store for all active calls.
 type CallManager struct {
-	log          *zap.Logger
 	metrics      metrics.Provider
-	calls        *DualIndexedArray[ActiveCall]
+	log          *zap.Logger
+	callsBySIP   map[string]*ActiveCall
+	callsByUUID  map[string]*ActiveCall
 	emptyWaiters []chan struct{}
 	activeCalls  atomic.Int64
 	totalCalls   atomic.Int64
-	mu           sync.Mutex
+	mu           sync.RWMutex
 }
 
 // NewCallManager creates a new call manager.
 func NewCallManager(log *zap.Logger, m metrics.Provider) *CallManager {
 	return &CallManager{
-		log:     log.Named("call_manager"),
-		metrics: m,
-		calls: NewDualIndexedArray(1024,
-			func(c *ActiveCall) string { return c.CallID },
-			func(c *ActiveCall) string { return c.ID.String() },
-		),
+		log:         log.Named("call_manager"),
+		metrics:     m,
+		callsBySIP:  make(map[string]*ActiveCall),
+		callsByUUID: make(map[string]*ActiveCall),
 	}
 }
 
@@ -63,9 +62,18 @@ func (m *CallManager) Stats() CallManagerStats {
 	}
 }
 
+// Metrics returns the configured metrics provider.
+func (m *CallManager) Metrics() metrics.Provider {
+	return m.metrics
+}
+
 // Add stores a new active call.
 func (m *CallManager) Add(call *ActiveCall) {
-	m.calls.Add(call)
+	m.mu.Lock()
+	m.callsBySIP[call.CallID] = call
+	m.callsByUUID[call.ID.String()] = call
+	m.mu.Unlock()
+
 	newCount := m.activeCalls.Add(1)
 	m.totalCalls.Add(1)
 	m.metrics.UpdateActiveCalls(int(newCount))
@@ -74,31 +82,51 @@ func (m *CallManager) Add(call *ActiveCall) {
 
 // Get retrieves an active call by its SIP Call-ID.
 func (m *CallManager) Get(callID string) (*ActiveCall, bool) {
-	return m.calls.GetByKey1(callID)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	c, ok := m.callsBySIP[callID]
+	if !ok || c == nil {
+		return nil, false
+	}
+	return c, true
 }
 
 // GetByInternalID retrieves an active call by its internal UUID string.
 func (m *CallManager) GetByInternalID(internalID string) (*ActiveCall, bool) {
-	return m.calls.GetByKey2(internalID)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	c, ok := m.callsByUUID[internalID]
+	if !ok || c == nil {
+		return nil, false
+	}
+	return c, true
 }
 
 // Remove deletes a call from the manager.
 func (m *CallManager) Remove(callID string) {
-	// Need to check if it exists before decrementing the count
-	if _, ok := m.calls.GetByKey1(callID); ok {
-		m.calls.RemoveByKey1(callID)
+	m.mu.Lock()
+	call, ok := m.callsBySIP[callID]
+	var waiters []chan struct{}
+	if ok {
+		delete(m.callsBySIP, callID)
+		delete(m.callsByUUID, call.ID.String())
 		newCount := m.activeCalls.Add(-1)
 		m.metrics.UpdateActiveCalls(int(newCount))
 		m.log.Info("Call removed from manager", zap.String("sip_call_id", callID))
 
 		if newCount == 0 {
-			m.mu.Lock()
-			for _, w := range m.emptyWaiters {
-				close(w)
-			}
+			waiters = m.emptyWaiters
 			m.emptyWaiters = nil
-			m.mu.Unlock()
 		}
+	}
+	m.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	for _, w := range waiters {
+		close(w)
 	}
 }
 
@@ -127,17 +155,24 @@ func (m *CallManager) WaitEmpty(ctx context.Context) error {
 }
 
 func (m *CallManager) ListCallIDs() []string {
-	activeCalls := m.calls.Values()
-	ids := make([]string, 0, len(activeCalls))
-	for _, call := range activeCalls {
-		ids = append(ids, call.CallID)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ids := make([]string, 0, len(m.callsBySIP))
+	for id := range m.callsBySIP {
+		ids = append(ids, id)
 	}
 	return ids
 }
 
 // ListActiveCalls returns a slice of all currently active calls.
 func (m *CallManager) ListActiveCalls() []*ActiveCall {
-	return m.calls.Values()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	calls := make([]*ActiveCall, 0, len(m.callsBySIP))
+	for _, call := range m.callsBySIP {
+		calls = append(calls, call)
+	}
+	return calls
 }
 
 // HangupCall initiates a graceful teardown of a call by sending a BYE request.
@@ -164,7 +199,7 @@ func (m *CallManager) HangupCall(ctx context.Context, callID string) error {
 
 // StopAll terminates all active calls, e.g., during a graceful shutdown.
 func (m *CallManager) StopAll(ctx context.Context) {
-	activeCalls := m.calls.Values()
+	activeCalls := m.ListActiveCalls()
 
 	m.log.Info("Stopping all active calls", zap.Int("count", len(activeCalls)))
 	for _, call := range activeCalls {
