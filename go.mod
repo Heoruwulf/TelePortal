@@ -1,18 +1,24 @@
 module github.com/heoruwulf/teleportal
 
-go 1.26.1
+go 1.27.1
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/emiago/sipgo v1.3.1
 	github.com/go-audio/audio v1.0.0
 	github.com/go-audio/wav v1.1.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
+	github.com/labstack/echo/v4 v4.15.2
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtp v1.10.2
 	github.com/pion/sdp/v3 v3.0.18
 	github.com/pion/webrtc/v4 v4.2.14
 	github.com/prometheus/client_golang v1.23.2
+	github.com/redis/go-redis/v9 v9.19.0
+	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.22.0
 )
 
@@ -176,6 +182,7 @@ require (
 	github.com/pion/ice/v4 v4.2.7 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.1.0 // indirect
+	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.16 // indirect
 	github.com/pion/sctp v1.10.0 // indirect
 	github.com/pion/srtp/v3 v3.0.11 // indirect
@@ -262,16 +269,6 @@ require (
 	honnef.co/go/tools v0.8.0 // indirect
 	mvdan.cc/gofumpt v0.11.0 // indirect
 	mvdan.cc/unparam v0.0.0-20260818115549-3f964bcb5673 // indirect
-)
-
-require (
-	github.com/emiago/sipgo v1.3.1
-	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/gorilla/websocket v1.5.3
-	github.com/labstack/echo/v4 v4.15.2
-	github.com/pion/randutil v0.1.0 // indirect
-	github.com/redis/go-redis/v9 v9.19.0
-	go.uber.org/zap v1.28.0
 )
 
 tool (

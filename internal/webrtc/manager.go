@@ -243,14 +243,12 @@ func (m *CallManager) HandleOutboundAudio(ctx context.Context, trackLocal *webrt
 					return
 				}
 				packet := &rtp.Packet{
-					Header: rtp.Header{
-						Version:        2,
-						PayloadType:    payloadType,
-						SequenceNumber: sequenceNumber,
-						Timestamp:      timestamp,
-						SSRC:           ssrc,
-					},
-					Payload: payload,
+					Version:        2,
+					PayloadType:    payloadType,
+					SequenceNumber: sequenceNumber,
+					Timestamp:      timestamp,
+					SSRC:           ssrc,
+					Payload:        payload,
 				}
 				// Pass the raw RTP packet to the WebRTC peer
 				if err := trackLocal.WriteRTP(packet); err != nil {

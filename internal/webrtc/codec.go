@@ -27,25 +27,21 @@ func NewMediaEngine() (*webrtc.MediaEngine, error) {
 
 	// Register Opus
 	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeOpus,
-			ClockRate:    48000,
-			Channels:     2,
-			SDPFmtpLine:  "minptime=10;useinbandfec=1",
-			RTCPFeedback: nil,
-		},
-		PayloadType: 111,
+		MimeType:     webrtc.MimeTypeOpus,
+		ClockRate:    48000,
+		Channels:     2,
+		SDPFmtpLine:  "minptime=10;useinbandfec=1",
+		RTCPFeedback: nil,
+		PayloadType:  111,
 	}, webrtc.RTPCodecTypeAudio); err != nil {
 		return nil, err
 	}
 
 	// Register L16 Big Endian 16kHz
 	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  "audio/L16",
-			ClockRate: 16000,
-			Channels:  1,
-		},
+		MimeType:    "audio/L16",
+		ClockRate:   16000,
+		Channels:    1,
 		PayloadType: 112,
 	}, webrtc.RTPCodecTypeAudio); err != nil {
 		return nil, err
@@ -53,11 +49,9 @@ func NewMediaEngine() (*webrtc.MediaEngine, error) {
 
 	// Register L16 Big Endian 8kHz
 	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:  "audio/L16",
-			ClockRate: 8000,
-			Channels:  1,
-		},
+		MimeType:    "audio/L16",
+		ClockRate:   8000,
+		Channels:    1,
 		PayloadType: 11,
 	}, webrtc.RTPCodecTypeAudio); err != nil {
 		return nil, err

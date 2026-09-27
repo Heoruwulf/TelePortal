@@ -1,6 +1,6 @@
 # TelePortal
 
-![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go)
+![Go Version](https://img.shields.io/badge/Go-1.27.1+-00ADD8?style=for-the-badge&logo=go)
 ![License](https://img.shields.io/badge/License-AGPLv3-red.svg?style=for-the-badge)
 
 TelePortal is a high-performance, zero-allocation bi-directional audio bridge. It is purpose-built for telephony and software developers who need to connect traditional VoIP systems (SIP/RTP) to modern, real-time AI voice agents over WebSockets.
@@ -75,7 +75,7 @@ graph LR
 
 ### Prerequisites
 
-* **Go 1.26+**
+* **Go 1.27.1+**
 * `staticcheck` (for QA: `go install honnef.co/go/tools/cmd/staticcheck@latest`)
 * `fieldalignment` (for QA: `go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest`)
 * Docker & Docker Compose (optional)

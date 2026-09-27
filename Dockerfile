@@ -1,54 +1,43 @@
-# Build stage
-FROM golang:1.26-alpine AS builder
+# Runtime base: pure-Go static binaries, no libc, no shell. Runs as uid 65532.
+# Pinned by digest; bump via Renovate/Dependabot. Declared before the first FROM so runtime stage can use it.
+ARG RUNTIME=gcr.io/distroless/static-debian13:nonroot@sha256:1c2c046bc09ed40fad370b599a0b1ae7987f55b01e247cf27a7c27cd97e5bbc7
 
-# Set the working directory
-WORKDIR /app
-
-# Install build dependencies
-RUN apk add --no-cache git
+# Builder: Debian/glibc-based so it matches the distroless runtime. Never use golang:alpine here.
+FROM golang:1.27-trixie AS build
+WORKDIR /src
 
 # Copy go.mod and go.sum files
 COPY go.mod go.sum ./
-
-# Download dependencies with caching
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 # Copy the source code
-COPY cmd/teleportal ./cmd/teleportal/
-COPY internal/ ./internal/
-COPY pkg/ ./pkg/
+COPY cmd/teleportal ./cmd/teleportal
+COPY internal ./internal
+COPY pkg ./pkg
+
+# Create log and data directories owned by nonroot (uid 65532)
+RUN mkdir -p /out/var/log/teleportal /out/var/lib/teleportal/recordings && \
+    chown -R 65532:65532 /out/var/log/teleportal /out/var/lib/teleportal/recordings
 
 # Build the application with caching
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -o /app/teleportal ./cmd/teleportal/main.go
+    CGO_ENABLED=0 go build -o /out/teleportal ./cmd/teleportal
 
-# Run stage
-FROM alpine:3.22.4
+# Production image. Last stage, so it is also the default build target.
+FROM ${RUNTIME} AS runtime
 
 # Set timezone, default to UTC
 ARG TZ=UTC
 ENV TZ=${TZ}
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+# Copy directories with nonroot ownership
+COPY --from=build --chown=65532:65532 /out/var/log/teleportal /var/log/teleportal
+COPY --from=build --chown=65532:65532 /out/var/lib/teleportal/recordings /var/lib/teleportal/recordings
 
-# Create a non-root user
-RUN adduser -D -u 1000 teleportal
-
-# Create log and data directories and set permissions
-RUN mkdir -p /var/log/teleportal /var/lib/teleportal/recordings && \
-    chown -R teleportal:teleportal /var/log/teleportal /var/lib/teleportal/recordings
-
-# Set the working directory
-WORKDIR /app
-
-# Copy the binary from the builder stage
-COPY --from=builder /app/teleportal /app/teleportal
-
-# Set the user to run the application
-USER teleportal
+# Copy the binary from the build stage
+COPY --from=build /out/teleportal /teleportal
 
 # Expose ports (SIP, HTTP, RTP, Web)
 # Note: RTP range is large and handled via environment variables, 
@@ -56,4 +45,4 @@ USER teleportal
 EXPOSE 5060/udp 5060/tcp 8080/tcp 3000/tcp
 
 # Run the application
-ENTRYPOINT ["/app/teleportal"]
+ENTRYPOINT ["/teleportal"]

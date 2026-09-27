@@ -45,7 +45,7 @@ func TestPionJitterBuffer(t *testing.T) {
 			Sequence:  100,
 			Timestamp: 0,
 			Raw: &rtp.Packet{
-				Header:  rtp.Header{SequenceNumber: 100, Timestamp: 0},
+				SequenceNumber: 100, Timestamp: 0,
 				Payload: []byte{0x00},
 			},
 		},
@@ -53,7 +53,7 @@ func TestPionJitterBuffer(t *testing.T) {
 			Sequence:  102,
 			Timestamp: 320,
 			Raw: &rtp.Packet{
-				Header:  rtp.Header{SequenceNumber: 102, Timestamp: 320},
+				SequenceNumber: 102, Timestamp: 320,
 				Payload: []byte{0x02},
 			},
 		},
@@ -61,7 +61,7 @@ func TestPionJitterBuffer(t *testing.T) {
 			Sequence:  101,
 			Timestamp: 160,
 			Raw: &rtp.Packet{
-				Header:  rtp.Header{SequenceNumber: 101, Timestamp: 160},
+				SequenceNumber: 101, Timestamp: 160,
 				Payload: []byte{0x01},
 			},
 		},
@@ -69,7 +69,7 @@ func TestPionJitterBuffer(t *testing.T) {
 			Sequence:  103,
 			Timestamp: 480,
 			Raw: &rtp.Packet{
-				Header:  rtp.Header{SequenceNumber: 103, Timestamp: 480},
+				SequenceNumber: 103, Timestamp: 480,
 				Payload: []byte{0x03},
 			},
 		},
@@ -112,7 +112,7 @@ func TestPionJitterBufferSilence(t *testing.T) {
 		Sequence:  100,
 		Timestamp: 0,
 		Raw: &rtp.Packet{
-			Header:  rtp.Header{SequenceNumber: 100, Timestamp: 0},
+			SequenceNumber: 100, Timestamp: 0,
 			Payload: []byte{0x00},
 		},
 	})

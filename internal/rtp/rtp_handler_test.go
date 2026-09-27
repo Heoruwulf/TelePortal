@@ -83,14 +83,12 @@ func TestStartReader_DTMF(t *testing.T) {
 	// RFC 2833 packet for digit '5'
 	dtmfPayload := []byte{0x05, 0x80, 0x00, 0xA0} // digit 5, end bit set, duration 160
 	p := &rtp.Packet{
-		Header: rtp.Header{
-			Version:        2,
-			PayloadType:    101,
-			SequenceNumber: 1,
-			Timestamp:      160,
-			SSRC:           12345,
-		},
-		Payload: dtmfPayload,
+		Version:        2,
+		PayloadType:    101,
+		SequenceNumber: 1,
+		Timestamp:      160,
+		SSRC:           12345,
+		Payload:        dtmfPayload,
 	}
 	buf, _ := p.Marshal()
 	_, _ = conn.Write(buf)

@@ -157,14 +157,12 @@ func (d *WebRTCDriver) Start(ctx context.Context) error {
 			}
 
 			packet := &rtp.Packet{
-				Header: rtp.Header{
-					Version:        2,
-					PayloadType:    pt,
-					SequenceNumber: sequenceNumber,
-					Timestamp:      timestamp,
-					SSRC:           ssrc,
-				},
-				Payload: chunk,
+				Version:        2,
+				PayloadType:    pt,
+				SequenceNumber: sequenceNumber,
+				Timestamp:      timestamp,
+				SSRC:           ssrc,
+				Payload:        chunk,
 			}
 
 			if err := d.audioTrack.WriteRTP(packet); err != nil {

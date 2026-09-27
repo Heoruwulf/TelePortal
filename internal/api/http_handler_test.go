@@ -34,11 +34,9 @@ import (
 
 func generateTestToken(secret, subject string, admin bool) string {
 	claims := TelePortalClaims{
-		Admin: admin,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   subject,
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		},
+		Admin:     admin,
+		Subject:   subject,
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, _ := token.SignedString([]byte(secret))
