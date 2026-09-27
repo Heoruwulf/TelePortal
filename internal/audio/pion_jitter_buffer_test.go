@@ -36,7 +36,13 @@ func TestPionJitterBuffer(t *testing.T) {
 	mm := metrics.NewNoOpProvider()
 	ptime := 20
 	// Use a larger buffer to ensure it doesn't pop immediately
-	jb := NewPionJitterBuffer(ctx, log, mm, "test-call", ptime, 8000, CodecPCMU, 0)
+	jb := NewPionJitterBuffer(ctx, log, mm, JitterBufferConfig{
+		CallID:         "test-call",
+		Codec:          CodecPCMU,
+		PTime:          ptime,
+		SampleRate:     8000,
+		MinPacketCount: 0,
+	})
 
 	// Push packets out of order.
 	// We push 100 first to establish the head, then others out of order.
@@ -105,7 +111,13 @@ func TestPionJitterBufferSilence(t *testing.T) {
 	ptime := 20
 	sampleRate := 8000
 	// Min packet count 1 to start emitting quickly
-	jb := NewPionJitterBuffer(ctx, log, mm, "test-call", ptime, sampleRate, CodecPCMU, 1)
+	jb := NewPionJitterBuffer(ctx, log, mm, JitterBufferConfig{
+		CallID:         "test-call",
+		Codec:          CodecPCMU,
+		PTime:          ptime,
+		SampleRate:     sampleRate,
+		MinPacketCount: 1,
+	})
 
 	// Push first packet
 	jb.Push(rtpdefs.RTPPacket{

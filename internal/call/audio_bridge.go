@@ -153,30 +153,30 @@ func (b *AudioBridge) SetOnBye(handler func()) {
 	b.OnBye = handler
 }
 
+// AudioBridgeConfig contains parameters for NewAudioBridge.
+type AudioBridgeConfig struct {
+	AudioInput    <-chan rtpdefs.RTPPacket
+	CallID        string
+	RecordingPath string
+	WsCodec       string
+	Stream        audio.Stream
+}
+
 // NewAudioBridge creates a new audio bridge for a call.
-func NewAudioBridge(
-	ctx context.Context,
-	log *zap.Logger,
-	m metrics.Provider,
-	audioInput <-chan rtpdefs.RTPPacket,
-	callID string,
-	stream audio.Stream,
-	recordingPath string,
-	wsCodec string,
-) *AudioBridge {
-	recorder, err := audio.NewStereoRecorder(ctx, log, recordingPath, callID, stream.Codec.SampleRate)
+func NewAudioBridge(ctx context.Context, log *zap.Logger, m metrics.Provider, cfg AudioBridgeConfig) *AudioBridge {
+	recorder, err := audio.NewStereoRecorder(ctx, log, cfg.RecordingPath, cfg.CallID, cfg.Stream.Codec.SampleRate)
 	if err != nil {
-		log.Error("Failed to initialize stereo recorder", zap.Error(err), zap.String("call_id", callID))
+		log.Error("Failed to initialize stereo recorder", zap.Error(err), zap.String("call_id", cfg.CallID))
 	}
 
 	return &AudioBridge{
 		log:        log,
 		metrics:    m,
-		audioInput: audioInput,
+		audioInput: cfg.AudioInput,
 		ctx:        ctx,
-		callID:     callID,
-		stream:     stream,
-		wsCodec:    wsCodec,
+		callID:     cfg.CallID,
+		stream:     cfg.Stream,
+		wsCodec:    cfg.WsCodec,
 		recorder:   recorder,
 	}
 }

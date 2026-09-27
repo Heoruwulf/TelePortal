@@ -161,24 +161,35 @@ type Orchestrator struct {
 
 // ... skipped ...
 
-func (o *Orchestrator) GetStats() (total, connected, ws, errs, dtmfSent, dtmfEchoed int) {
+// Stats holds current test execution counts.
+type Stats struct {
+	Total      int
+	Connected  int
+	WS         int
+	Errs       int
+	DTMFSent   int
+	DTMFEchoed int
+}
+
+func (o *Orchestrator) GetStats() Stats {
 	o.simMu.Lock()
 	defer o.simMu.Unlock()
-	total = len(o.sims)
+	var s Stats
+	s.Total = len(o.sims)
 	for _, sim := range o.sims {
 		switch sim.State {
 		case StateConnected:
-			connected++
+			s.Connected++
 		case StateWSEstab:
-			ws++
-			connected++ // it's also connected via SIP
+			s.WS++
+			s.Connected++ // it's also connected via SIP
 		case StateError:
-			errs++
+			s.Errs++
 		}
-		dtmfSent += sim.DTMFSent
-		dtmfEchoed += sim.DTMFEchoed
+		s.DTMFSent += sim.DTMFSent
+		s.DTMFEchoed += sim.DTMFEchoed
 	}
-	return
+	return s
 }
 
 func NewOrchestrator(cfg Config) (*Orchestrator, error) {
@@ -320,7 +331,14 @@ func (o *Orchestrator) runSimulator(ctx context.Context, sim *Simulator) {
 		}
 
 		rtpPortBase := 10000 + (sim.ID * 2)
-		rtp, err := NewRTPEngine(localIP, targetIP, rtpPortBase, o.payloadType, o.sampleRate, o.payload)
+		rtp, err := NewRTPEngine(RTPEngineConfig{
+			LocalIP:     localIP,
+			TargetIP:    targetIP,
+			TargetPort:  rtpPortBase,
+			PayloadType: o.payloadType,
+			SampleRate:  o.sampleRate,
+			Payload:     o.payload,
+		})
 		if err != nil {
 			sim.State = StateError
 			sim.LastError = err
@@ -333,7 +351,15 @@ func (o *Orchestrator) runSimulator(ctx context.Context, sim *Simulator) {
 			rtp.SetDTMF(o.cfg.DTMF, o.cfg.Duration, &sim.DTMFSent, &sim.DTMFEchoed)
 		}
 
-		caller := NewCaller(o.sipClient, o.cfg.SIPAddr, localIP, rtp.LocalPort(), o.payloadType, string(o.codecName), o.sampleRate)
+		caller := NewCaller(CallerConfig{
+			Client:      o.sipClient,
+			SIPAddr:     o.cfg.SIPAddr,
+			LocalIP:     localIP,
+			RTPPort:     rtp.LocalPort(),
+			PayloadType: o.payloadType,
+			CodecName:   string(o.codecName),
+			SampleRate:  o.sampleRate,
+		})
 		driver = &SIPDriver{caller: caller, rtpEngine: rtp}
 	case "webrtc":
 		wsURL := fmt.Sprintf("ws://%s/v1/webrtc/connect", o.cfg.APIAddr)

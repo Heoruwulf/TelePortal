@@ -43,7 +43,7 @@ dependenciesRules:
 
 functionsRules:
   - package: "github.com.heoruwulf.teleportal.**"
-    maxParameters: 12
-    maxReturnValues: 6
+    maxParameters: 5
+    maxReturnValues: 3
     maxLines: 200
     maxPublicFunctionPerFile: 20

@@ -64,15 +64,25 @@ type PionJitterBuffer struct {
 	hasLast        bool
 }
 
+// JitterBufferConfig defines configuration for PionJitterBuffer.
+type JitterBufferConfig struct {
+	CallID         string
+	Codec          CodecName
+	PTime          int
+	SampleRate     int
+	MinPacketCount int
+}
+
 // NewPionJitterBuffer creates a new jitter buffer using pion/jitterbuffer.
-func NewPionJitterBuffer(ctx context.Context, log *zap.Logger, m metrics.Provider, callID string, ptime int, sampleRate int, codec CodecName, minPacketCount int) *PionJitterBuffer {
+func NewPionJitterBuffer(ctx context.Context, log *zap.Logger, m metrics.Provider, cfg JitterBufferConfig) *PionJitterBuffer {
+	ptime := cfg.PTime
 	if ptime <= 0 {
 		ptime = 20 // Default to 20ms
 	}
 
 	jbMinPackets := uint16(50 / ptime) // ~50ms min buffer default
-	if minPacketCount > 0 {
-		jbMinPackets = uint16(minPacketCount)
+	if cfg.MinPacketCount > 0 {
+		jbMinPackets = uint16(cfg.MinPacketCount)
 	}
 
 	pjb := &PionJitterBuffer{
@@ -82,10 +92,10 @@ func NewPionJitterBuffer(ctx context.Context, log *zap.Logger, m metrics.Provide
 		stop:       make(chan struct{}),
 		packetDur:  time.Duration(ptime) * time.Millisecond,
 		ptime:      ptime,
-		sampleRate: sampleRate,
-		codec:      codec,
+		sampleRate: cfg.SampleRate,
+		codec:      cfg.Codec,
 		metrics:    m,
-		callID:     callID,
+		callID:     cfg.CallID,
 	}
 	pjb.isBuffering.Store(true)
 	pjb.silencePayload = pjb.generateSilence()

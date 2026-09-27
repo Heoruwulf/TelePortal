@@ -90,13 +90,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if time.Since(m.startTime) >= m.duration {
 			return m, tea.Quit
 		}
-		m.total, m.connected, m.ws, m.errs, m.dtmfSent, m.dtmfEchoed = m.orchestrator.GetStats()
+		m.updateStats()
 		return m, doTick()
 	case stateUpdateMsg:
-		m.total, m.connected, m.ws, m.errs, m.dtmfSent, m.dtmfEchoed = m.orchestrator.GetStats()
+		m.updateStats()
 		return m, waitForStateUpdate(m.orchestrator.StateUpdates())
 	}
 	return m, nil
+}
+
+func (m *tuiModel) updateStats() {
+	s := m.orchestrator.GetStats()
+	m.total = s.Total
+	m.connected = s.Connected
+	m.ws = s.WS
+	m.errs = s.Errs
+	m.dtmfSent = s.DTMFSent
+	m.dtmfEchoed = s.DTMFEchoed
 }
 
 var (

@@ -51,7 +51,13 @@ func TestHTTPHandler_Healthz(t *testing.T) {
 	cm := call.NewCallManager(log, m)
 	cfg := &config.CoreConfig{}
 	var isReady atomic.Bool
-	h := NewHTTPHandler(log, cm, nil, m, cfg, &isReady)
+	h := NewHTTPHandler(HTTPHandlerConfig{
+		Log:         log,
+		CallManager: cm,
+		Metrics:     m,
+		Config:      cfg,
+		IsReady:     &isReady,
+	})
 	h.RegisterHandlers(e)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -71,7 +77,13 @@ func TestHTTPHandler_Readyz(t *testing.T) {
 	cm := call.NewCallManager(log, m)
 	cfg := &config.CoreConfig{}
 	var isReady atomic.Bool
-	h := NewHTTPHandler(log, cm, nil, m, cfg, &isReady)
+	h := NewHTTPHandler(HTTPHandlerConfig{
+		Log:         log,
+		CallManager: cm,
+		Metrics:     m,
+		Config:      cfg,
+		IsReady:     &isReady,
+	})
 	h.RegisterHandlers(e)
 
 	// Test unready state
@@ -151,7 +163,13 @@ func TestHTTPHandler_ListCalls_Authentication(t *testing.T) {
 				},
 			}
 			var isReady atomic.Bool
-			h := NewHTTPHandler(log, cm, nil, m, cfg, &isReady)
+			h := NewHTTPHandler(HTTPHandlerConfig{
+				Log:         log,
+				CallManager: cm,
+				Metrics:     m,
+				Config:      cfg,
+				IsReady:     &isReady,
+			})
 			h.RegisterHandlers(e)
 
 			req := httptest.NewRequest(http.MethodGet, "/v1/calls", nil)
@@ -256,7 +274,13 @@ func TestHTTPHandler_HandleUpgrade_Authentication(t *testing.T) {
 				},
 			}
 			var isReady atomic.Bool
-			h := NewHTTPHandler(log, cm, nil, m, cfg, &isReady)
+			h := NewHTTPHandler(HTTPHandlerConfig{
+				Log:         log,
+				CallManager: cm,
+				Metrics:     m,
+				Config:      cfg,
+				IsReady:     &isReady,
+			})
 			h.RegisterHandlers(e)
 
 			url := "/v1/listen/mock-internal-id/" + tt.callID

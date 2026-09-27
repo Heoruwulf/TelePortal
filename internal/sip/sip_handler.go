@@ -56,32 +56,35 @@ type SIPHandler struct {
 	rtpExternalIP net.IP
 }
 
+// SIPHandlerConfig contains parameters for NewSIPHandler.
+type SIPHandlerConfig struct {
+	Log           *zap.Logger
+	DialogUA      *sipgo.DialogUA
+	CallManager   *call.CallManager
+	RTPManager    *rtp.RTPManager
+	Publisher     cache.EventPublisher
+	Metrics       metrics.Provider
+	Config        *config.CoreConfig
+	IsReady       *atomic.Bool
+	InstanceURL   string
+	RTPBindIP     net.IP
+	RTPExternalIP net.IP
+}
+
 // NewSIPHandler creates a new SIP request handler.
-func NewSIPHandler(
-	log *zap.Logger,
-	dialogUA *sipgo.DialogUA,
-	cm *call.CallManager,
-	rm *rtp.RTPManager,
-	pub cache.EventPublisher,
-	m metrics.Provider,
-	instanceURL string,
-	rtpBindIP net.IP,
-	rtpExternalIP net.IP,
-	cfg *config.CoreConfig,
-	isReady *atomic.Bool,
-) *SIPHandler {
+func NewSIPHandler(cfg SIPHandlerConfig) *SIPHandler {
 	return &SIPHandler{
-		log:           log.Named("handler"),
-		dialogUA:      dialogUA,
-		callManager:   cm,
-		rtpManager:    rm,
-		publisher:     pub,
-		metrics:       m,
-		instanceURL:   instanceURL,
-		rtpBindIP:     rtpBindIP,
-		rtpExternalIP: rtpExternalIP,
-		config:        cfg,
-		isReady:       isReady,
+		log:           cfg.Log.Named("handler"),
+		dialogUA:      cfg.DialogUA,
+		callManager:   cfg.CallManager,
+		rtpManager:    cfg.RTPManager,
+		publisher:     cfg.Publisher,
+		metrics:       cfg.Metrics,
+		instanceURL:   cfg.InstanceURL,
+		rtpBindIP:     cfg.RTPBindIP,
+		rtpExternalIP: cfg.RTPExternalIP,
+		config:        cfg.Config,
+		isReady:       cfg.IsReady,
 	}
 }
 

@@ -71,7 +71,12 @@ func TestStartReader_DTMF(t *testing.T) {
 		}
 	}
 
-	go StartReader(ctx, log, l, jb, info, nil, onDTMF)
+	go StartReader(ctx, log, ReaderConfig{
+		Stream:       l,
+		JitterBuffer: jb,
+		Info:         info,
+		OnDTMF:       onDTMF,
+	})
 
 	// Send DTMF packet
 	conn, err := net.Dial("udp", addr.String())
@@ -129,7 +134,14 @@ func TestStartWriter_DTMFInjection(t *testing.T) {
 	audioSource := make(chan []byte)
 	dtmfSource := make(chan DTMFRequest, 1)
 
-	go StartWriter(ctx, log, l, addr, info, audioSource, dtmfSource, string(audio.CodecL16))
+	go StartWriter(ctx, log, WriterConfig{
+		Stream:      l,
+		RemoteAddr:  addr,
+		Info:        info,
+		AudioSource: audioSource,
+		DTMFSource:  dtmfSource,
+		WsCodec:     string(audio.CodecL16),
+	})
 
 	// Inject DTMF
 	dtmfSource <- DTMFRequest{Digit: "1", Duration: 100}

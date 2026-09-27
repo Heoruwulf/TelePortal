@@ -42,7 +42,12 @@ func TestAudioBridge_DTMFAndMetadata(t *testing.T) {
 	stream := audio.Stream{Codec: codec, PTime: 20, DTMFPayloadType: 101}
 
 	audioInput := make(chan rtpdefs.RTPPacket, 10)
-	bridge := NewAudioBridge(context.Background(), log, mm, audioInput, "test-call", stream, "", string(audio.CodecL16))
+	bridge := NewAudioBridge(context.Background(), log, mm, AudioBridgeConfig{
+		AudioInput: audioInput,
+		CallID:     "test-call",
+		Stream:     stream,
+		WsCodec:    string(audio.CodecL16),
+	})
 	bridge.Start()
 	defer bridge.CloseAll()
 
@@ -150,7 +155,12 @@ func TestAudioBridge_PassThrough(t *testing.T) {
 	stream := audio.Stream{Codec: codec, PTime: 20}
 
 	audioInput := make(chan rtpdefs.RTPPacket, 10)
-	bridge := NewAudioBridge(context.Background(), log, mm, audioInput, "test-call", stream, "", string(audio.CodecPass))
+	bridge := NewAudioBridge(context.Background(), log, mm, AudioBridgeConfig{
+		AudioInput: audioInput,
+		CallID:     "test-call",
+		Stream:     stream,
+		WsCodec:    string(audio.CodecPass),
+	})
 	bridge.Start()
 	defer bridge.CloseAll()
 
@@ -208,7 +218,12 @@ func TestAudioBridge_ZeroAllocationBroadcast(t *testing.T) {
 	stream := audio.Stream{Codec: codec, PTime: 20}
 
 	audioInput := make(chan rtpdefs.RTPPacket, 100)
-	bridge := NewAudioBridge(context.Background(), log, mm, audioInput, "test-alloc", stream, "", string(audio.CodecPass))
+	bridge := NewAudioBridge(context.Background(), log, mm, AudioBridgeConfig{
+		AudioInput: audioInput,
+		CallID:     "test-alloc",
+		Stream:     stream,
+		WsCodec:    string(audio.CodecPass),
+	})
 	bridge.Start()
 	defer bridge.CloseAll()
 

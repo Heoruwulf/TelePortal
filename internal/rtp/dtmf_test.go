@@ -67,19 +67,19 @@ func TestParseDTMFPayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			digit, end, duration, err := ParseDTMFPayload(tt.payload)
+			event, err := ParseDTMFPayload(tt.payload)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseDTMFPayload() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if digit != tt.wantDigit {
-				t.Errorf("ParseDTMFPayload() digit = %v, want %v", digit, tt.wantDigit)
+			if event.Digit != tt.wantDigit {
+				t.Errorf("ParseDTMFPayload() digit = %v, want %v", event.Digit, tt.wantDigit)
 			}
-			if end != tt.wantEnd {
-				t.Errorf("ParseDTMFPayload() end = %v, want %v", end, tt.wantEnd)
+			if event.End != tt.wantEnd {
+				t.Errorf("ParseDTMFPayload() end = %v, want %v", event.End, tt.wantEnd)
 			}
-			if duration != tt.wantDuration {
-				t.Errorf("ParseDTMFPayload() duration = %v, want %v", duration, tt.wantDuration)
+			if event.Duration != tt.wantDuration {
+				t.Errorf("ParseDTMFPayload() duration = %v, want %v", event.Duration, tt.wantDuration)
 			}
 		})
 	}

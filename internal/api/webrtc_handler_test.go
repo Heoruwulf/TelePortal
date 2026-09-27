@@ -39,7 +39,13 @@ func TestHandleWebRTCConnect_NoToken(t *testing.T) {
 			JWTSecret: "secret",
 		},
 	}
-	h := NewHTTPHandler(zap.NewNop(), call.NewCallManager(zap.NewNop(), metrics.NewNoOpProvider()), nil, metrics.NewNoOpProvider(), cfg, &atomic.Bool{})
+	h := NewHTTPHandler(HTTPHandlerConfig{
+		Log:         zap.NewNop(),
+		CallManager: call.NewCallManager(zap.NewNop(), metrics.NewNoOpProvider()),
+		Metrics:     metrics.NewNoOpProvider(),
+		Config:      cfg,
+		IsReady:     &atomic.Bool{},
+	})
 	h.RegisterHandlers(e)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/webrtc/connect", nil)
@@ -60,7 +66,13 @@ func TestHandleWebRTCConnect_WithToken(t *testing.T) {
 	// Simple test for WebSocket Upgrade (we mock the token)
 	e := echo.New()
 	cfg := &config.CoreConfig{}
-	h := NewHTTPHandler(zap.NewNop(), call.NewCallManager(zap.NewNop(), metrics.NewNoOpProvider()), nil, metrics.NewNoOpProvider(), cfg, &atomic.Bool{})
+	h := NewHTTPHandler(HTTPHandlerConfig{
+		Log:         zap.NewNop(),
+		CallManager: call.NewCallManager(zap.NewNop(), metrics.NewNoOpProvider()),
+		Metrics:     metrics.NewNoOpProvider(),
+		Config:      cfg,
+		IsReady:     &atomic.Bool{},
+	})
 	h.RegisterHandlers(e)
 
 	server := httptest.NewServer(e)

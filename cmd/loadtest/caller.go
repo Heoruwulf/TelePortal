@@ -42,27 +42,38 @@ type Caller struct {
 	payloadType uint8
 }
 
-func NewCaller(client *sipgo.Client, sipAddr string, localIP net.IP, rtpPort int, payloadType uint8, codecName string, sampleRate int) *Caller {
+// CallerConfig contains parameters for NewCaller.
+type CallerConfig struct {
+	Client      *sipgo.Client
+	SIPAddr     string
+	CodecName   string
+	LocalIP     net.IP
+	RTPPort     int
+	SampleRate  int
+	PayloadType uint8
+}
+
+func NewCaller(cfg CallerConfig) *Caller {
 	contactAddr := sip.Uri{
 		User: "loadtest",
-		Host: localIP.String(),
+		Host: cfg.LocalIP.String(),
 		Port: 5060, // Dummy
 	}
 
 	dialogUA := &sipgo.DialogUA{
-		Client:     client,
+		Client:     cfg.Client,
 		ContactHDR: sip.ContactHeader{Address: contactAddr},
 	}
 
 	return &Caller{
 		dialogUA:    dialogUA,
-		sipAddr:     sipAddr,
-		localIP:     localIP,
-		rtpPort:     rtpPort,
+		sipAddr:     cfg.SIPAddr,
+		localIP:     cfg.LocalIP,
+		rtpPort:     cfg.RTPPort,
 		callID:      uuid.New().String(),
-		payloadType: payloadType,
-		codecName:   codecName,
-		sampleRate:  sampleRate,
+		payloadType: cfg.PayloadType,
+		codecName:   cfg.CodecName,
+		sampleRate:  cfg.SampleRate,
 	}
 }
 

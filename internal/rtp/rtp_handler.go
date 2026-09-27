@@ -115,24 +115,34 @@ func encodeOutboundPayload(l16Payload []byte, actualWsCodec, wsCodec string, inf
 	}
 }
 
+// WriterConfig contains parameters for StartWriter.
+type WriterConfig struct {
+	Stream      net.PacketConn
+	RemoteAddr  net.Addr
+	AudioSource <-chan []byte
+	DTMFSource  <-chan DTMFRequest
+	WsCodec     string
+	Info        audio.Stream
+}
+
 // StartWriter sends RTP packets to the remote endpoint.
 // It consumes payloads from the provided channel, encodes them if necessary, and sends them.
-func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, raddr net.Addr, info audio.Stream, audioSource <-chan []byte, dtmfSource <-chan DTMFRequest, wsCodec string) {
+func StartWriter(ctx context.Context, log *zap.Logger, cfg WriterConfig) {
 	log = log.Named("rtp_writer")
-	if stream == nil {
+	if cfg.Stream == nil {
 		log.Error("RTP stream is nil, writer cannot start")
 		return
 	}
 	log.Info("Starting RTP writer",
-		zap.String("codec", string(info.Codec.Name)),
-		zap.Int("ptime", info.PTime),
+		zap.String("codec", string(cfg.Info.Codec.Name)),
+		zap.Int("ptime", cfg.Info.PTime),
 	)
 	defer log.Info("RTP writer stopped")
 
-	rtpHeader, timestamp, seqNum := initRTPHeader(info, log)
-	tsIncrement := info.SamplesPerPacket()
+	rtpHeader, timestamp, seqNum := initRTPHeader(cfg.Info, log)
+	tsIncrement := cfg.Info.SamplesPerPacket()
 
-	dtmfGenerator := NewDTMFGenerator(info.Codec.SampleRate, info.PTime)
+	dtmfGenerator := NewDTMFGenerator(cfg.Info.Codec.SampleRate, cfg.Info.PTime)
 	var pendingDTMF [][]byte
 	var currentDTMFTimestamp uint32
 
@@ -140,12 +150,12 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 		for _, p := range pendingDTMF {
 			audiopool.PutBuffer(p)
 		}
-		drainAudioSource(audioSource)
+		drainAudioSource(cfg.AudioSource)
 	}()
 
-	actualWsCodec := wsCodec
-	if wsCodec == string(audio.CodecPass) {
-		actualWsCodec = string(info.Codec.Name)
+	actualWsCodec := cfg.WsCodec
+	if cfg.WsCodec == string(audio.CodecPass) {
+		actualWsCodec = string(cfg.Info.Codec.Name)
 	}
 
 	bytesPerSample := 2
@@ -153,16 +163,16 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 		bytesPerSample = 1
 	}
 
-	channels := info.Codec.Channels
+	channels := cfg.Info.Codec.Channels
 	if channels == 0 {
 		channels = 1
 	}
 
-	ptime := info.PTime
+	ptime := cfg.Info.PTime
 	if ptime == 0 {
 		ptime = 20
 	}
-	sampleRate := info.Codec.SampleRate
+	sampleRate := cfg.Info.Codec.SampleRate
 	if sampleRate == 0 {
 		sampleRate = 8000
 	}
@@ -180,6 +190,9 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 	ticker := time.NewTicker(time.Duration(ptime) * time.Millisecond)
 	defer ticker.Stop()
 
+	dtmfSource := cfg.DTMFSource
+	audioSource := cfg.AudioSource
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -190,7 +203,7 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 				dtmfSource = nil
 				continue
 			}
-			if info.DTMFPayloadType == 0 {
+			if cfg.Info.DTMFPayloadType == 0 {
 				log.Warn("DTMF request received but DTMF is not negotiated", zap.String("digit", req.Digit))
 				continue
 			}
@@ -230,7 +243,7 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 				pendingDTMF = pendingDTMF[1:]
 
 				seqNum++
-				rtpHeader[1] = info.DTMFPayloadType
+				rtpHeader[1] = cfg.Info.DTMFPayloadType
 				binary.BigEndian.PutUint16(rtpHeader[2:4], seqNum)
 				binary.BigEndian.PutUint32(rtpHeader[4:8], currentDTMFTimestamp)
 
@@ -238,14 +251,14 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 				copy(packet[:rtpHeaderSize], rtpHeader)
 				copy(packet[rtpHeaderSize:], p)
 
-				if _, err := stream.WriteTo(packet, raddr); err != nil {
+				if _, err := cfg.Stream.WriteTo(packet, cfg.RemoteAddr); err != nil {
 					log.Warn("Failed to write DTMF RTP packet", zap.Error(err))
 				}
 				audiopool.PutBuffer(packet)
 				audiopool.PutBuffer(p)
 
 				timestamp += tsIncrement
-				rtpHeader[1] = info.Codec.PayloadType
+				rtpHeader[1] = cfg.Info.Codec.PayloadType
 
 				if count >= bytesPerTick {
 					head = (head + bytesPerTick) % capacity
@@ -275,7 +288,7 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 			}
 
 			// Encode if necessary
-			payload, err := encodeOutboundPayload(l16Payload, actualWsCodec, wsCodec, info)
+			payload, err := encodeOutboundPayload(l16Payload, actualWsCodec, cfg.WsCodec, cfg.Info)
 			if err != nil {
 				log.Warn("Failed to encode audio for RTP", zap.Error(err))
 				audiopool.PutBuffer(l16Payload)
@@ -292,7 +305,7 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 			copy(packet[:rtpHeaderSize], rtpHeader)
 			copy(packet[rtpHeaderSize:], payload)
 
-			if _, err := stream.WriteTo(packet, raddr); err != nil {
+			if _, err := cfg.Stream.WriteTo(packet, cfg.RemoteAddr); err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					// continue
 				} else {
@@ -309,20 +322,29 @@ func StartWriter(ctx context.Context, log *zap.Logger, stream net.PacketConn, ra
 	}
 }
 
+// ReaderConfig contains parameters for StartReader.
+type ReaderConfig struct {
+	Stream       net.PacketConn
+	JitterBuffer rtpdefs.JitterBuffer
+	OnTimeout    func()
+	OnDTMF       func(digit string, duration uint16, end bool)
+	Info         audio.Stream
+}
+
 // StartReader reads incoming RTP packets from the stream.
 // It detects media timeouts (stale connections) and triggers onTimeout if no packets are received for 10s.
-func StartReader(ctx context.Context, log *zap.Logger, stream net.PacketConn, jitterBuffer rtpdefs.JitterBuffer, info audio.Stream, onTimeout func(), onDTMF func(digit string, duration uint16, end bool)) {
+func StartReader(ctx context.Context, log *zap.Logger, cfg ReaderConfig) {
 	log = log.Named("rtp_reader")
-	if stream == nil {
+	if cfg.Stream == nil {
 		log.Error("RTP stream is nil, reader cannot start")
 		return
 	}
-	payloadType := info.Codec.PayloadType
+	payloadType := cfg.Info.Codec.PayloadType
 
 	log.Info("Starting RTP reader",
-		zap.String("codec", string(info.Codec.Name)),
+		zap.String("codec", string(cfg.Info.Codec.Name)),
 		zap.Int("payload_type", int(payloadType)),
-		zap.Int("dtmf_payload_type", int(info.DTMFPayloadType)),
+		zap.Int("dtmf_payload_type", int(cfg.Info.DTMFPayloadType)),
 	)
 	defer log.Info("RTP reader stopped")
 
@@ -331,7 +353,7 @@ func StartReader(ctx context.Context, log *zap.Logger, stream net.PacketConn, ji
 	var lastDTMFTimestamp uint32
 
 	// Initial deadline
-	_ = stream.SetReadDeadline(time.Now().Add(1 * time.Second))
+	_ = cfg.Stream.SetReadDeadline(time.Now().Add(1 * time.Second))
 
 	for {
 		// Allocate a buffer from the pool for reading the packet.
@@ -339,7 +361,7 @@ func StartReader(ctx context.Context, log *zap.Logger, stream net.PacketConn, ji
 		// We use a buffer from the default pool (2048 bytes).
 		buffer := audiopool.GetBuffer(1500)
 
-		n, _, err := stream.ReadFrom(buffer)
+		n, _, err := cfg.Stream.ReadFrom(buffer)
 		readTime := time.Now()
 
 		if ctx.Err() != nil {
@@ -353,13 +375,13 @@ func StartReader(ctx context.Context, log *zap.Logger, stream net.PacketConn, ji
 				// Check for overall media timeout
 				if time.Since(lastPacketTime) > timeoutDuration {
 					log.Warn("RTP media timeout detected (no packets received), ending call")
-					if onTimeout != nil {
-						onTimeout()
+					if cfg.OnTimeout != nil {
+						cfg.OnTimeout()
 					}
 					return
 				}
 				// Reset deadline and continue
-				_ = stream.SetReadDeadline(time.Now().Add(1 * time.Second))
+				_ = cfg.Stream.SetReadDeadline(time.Now().Add(1 * time.Second))
 				continue // Expected error for checking context, continue loop
 			}
 			log.Error("Failed to read from RTP stream", zap.Error(err))
@@ -382,18 +404,18 @@ func StartReader(ctx context.Context, log *zap.Logger, stream net.PacketConn, ji
 			continue
 		}
 		// Check for DTMF
-		if info.DTMFPayloadType != 0 && packet.Raw.PayloadType == info.DTMFPayloadType {
-			digit, end, duration, err := ParseDTMFPayload(packet.Payload)
+		if cfg.Info.DTMFPayloadType != 0 && packet.Raw.PayloadType == cfg.Info.DTMFPayloadType {
+			event, err := ParseDTMFPayload(packet.Payload)
 			if err == nil {
-				if onDTMF != nil {
+				if cfg.OnDTMF != nil {
 					// Deduplicate end packets based on RTP timestamp
-					if end {
+					if event.End {
 						if packet.Raw.Timestamp != lastDTMFTimestamp {
 							lastDTMFTimestamp = packet.Raw.Timestamp
-							onDTMF(digit, duration, end)
+							cfg.OnDTMF(event.Digit, event.Duration, event.End)
 						}
 					} else {
-						onDTMF(digit, duration, end)
+						cfg.OnDTMF(event.Digit, event.Duration, event.End)
 					}
 				}
 			} else {
@@ -405,7 +427,7 @@ func StartReader(ctx context.Context, log *zap.Logger, stream net.PacketConn, ji
 		}
 
 		// Push packet object to jitter buffer
-		jitterBuffer.Push(packet)
+		cfg.JitterBuffer.Push(packet)
 	}
 }
 

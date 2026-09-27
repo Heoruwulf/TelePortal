@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/heoruwulf/teleportal/internal/audio"
 	"github.com/heoruwulf/teleportal/internal/call"
 	"github.com/heoruwulf/teleportal/internal/platform/config"
 	"github.com/heoruwulf/teleportal/internal/platform/metrics"
@@ -43,13 +42,21 @@ func TestHTTPHandler_HandleUpgrade_Concurrency(t *testing.T) {
 	cfg := &config.CoreConfig{}
 	var isReady atomic.Bool
 	isReady.Store(true)
-	h := NewHTTPHandler(log, cm, nil, m, cfg, &isReady)
+	h := NewHTTPHandler(HTTPHandlerConfig{
+		Log:         log,
+		CallManager: cm,
+		Metrics:     m,
+		Config:      cfg,
+		IsReady:     &isReady,
+	})
 
 	e := echo.New()
 	h.RegisterHandlers(e)
 
 	callID := "test-call"
-	mb := call.NewAudioBridge(t.Context(), log, m, nil, callID, audio.Stream{}, "", "")
+	mb := call.NewAudioBridge(t.Context(), log, m, call.AudioBridgeConfig{
+		CallID: callID,
+	})
 	id := uuid.New()
 	ac := &call.ActiveCall{
 		ID:          id,

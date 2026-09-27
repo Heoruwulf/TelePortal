@@ -178,22 +178,29 @@ func NewApp(logger *zap.Logger, logAtomicLevel zap.AtomicLevel, config *config.C
 	webrtcManager := webrtc.NewCallManager(logger, publisher, callManager)
 
 	// Register API and WebSocket handlers
-	httpHandler := api.NewHTTPHandler(logger, callManager, webrtcManager, m, config, &app.isReady)
+	httpHandler := api.NewHTTPHandler(api.HTTPHandlerConfig{
+		Log:           logger,
+		CallManager:   callManager,
+		WebRTCManager: webrtcManager,
+		Metrics:       m,
+		Config:        config,
+		IsReady:       &app.isReady,
+	})
 	httpHandler.RegisterHandlers(e)
 
-	sHandler := siphandler.NewSIPHandler(
-		logger.Named("sip"),
-		dialogUA,
-		callManager,
-		rtpManager,
-		publisher,
-		m,
-		config.HTTPServer.PublicURL,
-		rtpBindIP,
-		rtpExternalIP,
-		config,
-		&app.isReady,
-	)
+	sHandler := siphandler.NewSIPHandler(siphandler.SIPHandlerConfig{
+		Log:           logger.Named("sip"),
+		DialogUA:      dialogUA,
+		CallManager:   callManager,
+		RTPManager:    rtpManager,
+		Publisher:     publisher,
+		Metrics:       m,
+		InstanceURL:   config.HTTPServer.PublicURL,
+		RTPBindIP:     rtpBindIP,
+		RTPExternalIP: rtpExternalIP,
+		Config:        config,
+		IsReady:       &app.isReady,
+	})
 	sHandler.RegisterHandlers(sipServer)
 
 	return app, nil

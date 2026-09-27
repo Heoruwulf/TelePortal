@@ -65,19 +65,29 @@ type HTTPHandler struct {
 	upgrader websocket.Upgrader
 }
 
+// HTTPHandlerConfig contains parameters for NewHTTPHandler.
+type HTTPHandlerConfig struct {
+	Log           *zap.Logger
+	CallManager   *call.CallManager
+	WebRTCManager *teleportalwebrtc.CallManager
+	Metrics       metrics.Provider
+	Config        *config.CoreConfig
+	IsReady       *atomic.Bool
+}
+
 // NewHTTPHandler creates a new handler.
-func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, wm *teleportalwebrtc.CallManager, m metrics.Provider, cfg *config.CoreConfig, isReady *atomic.Bool) *HTTPHandler {
+func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
 	upgrader := websocket.Upgrader{}
 
 	// Override default CheckOrigin if custom CORS origins are configured
-	if cfg.HTTPServer.CORSOrigins != "" {
+	if cfg.Config.HTTPServer.CORSOrigins != "" {
 		upgrader.CheckOrigin = func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
 			if origin == "" {
 				return true // Non-browser clients usually don't send an Origin header
 			}
 
-			for allowed := range strings.SplitSeq(cfg.HTTPServer.CORSOrigins, ",") {
+			for allowed := range strings.SplitSeq(cfg.Config.HTTPServer.CORSOrigins, ",") {
 				allowed = strings.TrimSpace(allowed)
 				if allowed == "*" || strings.EqualFold(allowed, origin) {
 					return true
@@ -88,13 +98,13 @@ func NewHTTPHandler(log *zap.Logger, cm *call.CallManager, wm *teleportalwebrtc.
 	}
 
 	return &HTTPHandler{
-		log:           log.Named("http_handler"),
-		callManager:   cm,
-		webrtcManager: wm,
-		metrics:       m,
+		log:           cfg.Log.Named("http_handler"),
+		callManager:   cfg.CallManager,
+		webrtcManager: cfg.WebRTCManager,
+		metrics:       cfg.Metrics,
 		upgrader:      upgrader,
-		config:        cfg,
-		isReady:       isReady,
+		config:        cfg.Config,
+		isReady:       cfg.IsReady,
 	}
 }
 

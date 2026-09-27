@@ -37,33 +37,33 @@ func TestDTMFGenerator(t *testing.T) {
 	}
 
 	// Verify first packet
-	digit, end, _, err := ParseDTMFPayload(packets[0])
+	ev0, err := ParseDTMFPayload(packets[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if digit != "1" {
-		t.Errorf("expected digit 1, got %s", digit)
+	if ev0.Digit != "1" {
+		t.Errorf("expected digit 1, got %s", ev0.Digit)
 	}
-	if end {
+	if ev0.End {
 		t.Error("expected first packet NOT to have end bit set")
 	}
 
 	// Verify last packet
 	lastIdx := len(packets) - 1
-	_, end, duration, err := ParseDTMFPayload(packets[lastIdx])
+	evLast, err := ParseDTMFPayload(packets[lastIdx])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !end {
+	if !evLast.End {
 		t.Error("expected last packet to have end bit set")
 	}
-	if duration != 1280 {
-		t.Errorf("expected duration 1280, got %d", duration)
+	if evLast.Duration != 1280 {
+		t.Errorf("expected duration 1280, got %d", evLast.Duration)
 	}
 
 	// Verify second to last packet also has end bit set (retransmission)
-	_, end, _, err = ParseDTMFPayload(packets[lastIdx-1])
-	if err == nil && !end {
+	evPrev, err := ParseDTMFPayload(packets[lastIdx-1])
+	if err == nil && !evPrev.End {
 		t.Error("expected second to last packet to have end bit set")
 	}
 }

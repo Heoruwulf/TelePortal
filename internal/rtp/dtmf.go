@@ -27,25 +27,37 @@ var eventToDigit = []string{
 	"*", "#", "A", "B", "C", "D",
 }
 
+// DTMFEvent represents a parsed RFC 4733 DTMF event.
+type DTMFEvent struct {
+	Digit    string
+	Duration uint16
+	End      bool
+}
+
 // ParseDTMFPayload parses an RFC 2833 (RFC 4733) DTMF payload.
 // RFC 2833 payload is 4 bytes:
 // 0: event (digit)
 // 1: E (1 bit), R (1 bit), volume (6 bits)
 // 2-3: duration (16 bits, big-endian)
-func ParseDTMFPayload(payload []byte) (digit string, end bool, duration uint16, err error) {
+func ParseDTMFPayload(payload []byte) (DTMFEvent, error) {
 	if len(payload) < 4 {
-		return "", false, 0, fmt.Errorf("invalid DTMF payload length: %d", len(payload))
+		return DTMFEvent{}, fmt.Errorf("invalid DTMF payload length: %d", len(payload))
 	}
 
 	event := payload[0]
-	end = (payload[1] & 0x80) != 0
-	duration = binary.BigEndian.Uint16(payload[2:4])
+	end := (payload[1] & 0x80) != 0
+	duration := binary.BigEndian.Uint16(payload[2:4])
 
+	var digit string
 	if event < uint8(len(eventToDigit)) {
 		digit = eventToDigit[event]
 	} else {
 		digit = fmt.Sprintf("%d", event)
 	}
 
-	return digit, end, duration, nil
+	return DTMFEvent{
+		Digit:    digit,
+		End:      end,
+		Duration: duration,
+	}, nil
 }

@@ -50,7 +50,13 @@ func TestAudioBridge_RecordingIntegration(t *testing.T) {
 
 	audioInput := make(chan rtpdefs.RTPPacket, 100)
 
-	bridge := NewAudioBridge(context.Background(), log, &mockMetrics{}, audioInput, callID, stream, tempDir, string(audio.CodecL16))
+	bridge := NewAudioBridge(context.Background(), log, &mockMetrics{}, AudioBridgeConfig{
+		AudioInput:    audioInput,
+		CallID:        callID,
+		RecordingPath: tempDir,
+		WsCodec:       string(audio.CodecL16),
+		Stream:        stream,
+	})
 	bridge.Start()
 
 	// Send 50 packets to Rx (Left) - 1 second at 20ms ptime

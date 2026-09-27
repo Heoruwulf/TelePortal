@@ -47,8 +47,18 @@ type RTPEngine struct {
 	payloadType  uint8
 }
 
-func NewRTPEngine(localIP net.IP, targetIP net.IP, targetPort int, payloadType uint8, sampleRate int, payload []byte) (*RTPEngine, error) {
-	addr := &net.UDPAddr{IP: localIP, Port: 0}
+// RTPEngineConfig contains parameters for NewRTPEngine.
+type RTPEngineConfig struct {
+	LocalIP     net.IP
+	TargetIP    net.IP
+	Payload     []byte
+	TargetPort  int
+	SampleRate  int
+	PayloadType uint8
+}
+
+func NewRTPEngine(cfg RTPEngineConfig) (*RTPEngine, error) {
+	addr := &net.UDPAddr{IP: cfg.LocalIP, Port: 0}
 	conn, err := net.ListenUDP("udp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listening on udp: %w", err)
@@ -59,9 +69,9 @@ func NewRTPEngine(localIP net.IP, targetIP net.IP, targetPort int, payloadType u
 
 	localPort := conn.LocalAddr().(*net.UDPAddr).Port
 
-	samplesPerChunk := (sampleRate * 20) / 1000
+	samplesPerChunk := (cfg.SampleRate * 20) / 1000
 	bytesPerSample := 1
-	if payloadType == audio.PayloadTypeL16 {
+	if cfg.PayloadType == audio.PayloadTypeL16 {
 		bytesPerSample = 2
 	}
 	chunkSize := samplesPerChunk * bytesPerSample
@@ -69,11 +79,11 @@ func NewRTPEngine(localIP net.IP, targetIP net.IP, targetPort int, payloadType u
 	return &RTPEngine{
 		conn:        conn,
 		localPort:   localPort,
-		targetIP:    targetIP,
-		targetPort:  targetPort,
-		payload:     payload,
-		payloadType: payloadType,
-		sampleRate:  sampleRate,
+		targetIP:    cfg.TargetIP,
+		targetPort:  cfg.TargetPort,
+		payload:     cfg.Payload,
+		payloadType: cfg.PayloadType,
+		sampleRate:  cfg.SampleRate,
 		chunkSize:   chunkSize,
 	}, nil
 }

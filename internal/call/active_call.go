@@ -104,11 +104,13 @@ func NewActiveCall(log *zap.Logger, m metrics.Provider, cfg CallConfig) *ActiveC
 			ctx,
 			callLog,
 			m,
-			cfg.CallID,
-			cfg.StreamInfo.PTime,
-			cfg.StreamInfo.Codec.SampleRate,
-			cfg.StreamInfo.Codec.Name,
-			cfg.MinPacketCount,
+			audio.JitterBufferConfig{
+				CallID:         cfg.CallID,
+				Codec:          cfg.StreamInfo.Codec.Name,
+				PTime:          cfg.StreamInfo.PTime,
+				SampleRate:     cfg.StreamInfo.Codec.SampleRate,
+				MinPacketCount: cfg.MinPacketCount,
+			},
 		)
 		jitterBuffer = jb
 		audioBridgeInput = jb.Pop()
@@ -118,11 +120,13 @@ func NewActiveCall(log *zap.Logger, m metrics.Provider, cfg CallConfig) *ActiveC
 		ctx,
 		callLog.Named("audio_bridge"),
 		m,
-		audioBridgeInput,
-		cfg.CallID,
-		cfg.StreamInfo,
-		cfg.RecordingPath,
-		cfg.WsCodec,
+		AudioBridgeConfig{
+			AudioInput:    audioBridgeInput,
+			CallID:        cfg.CallID,
+			RecordingPath: cfg.RecordingPath,
+			WsCodec:       cfg.WsCodec,
+			Stream:        cfg.StreamInfo,
+		},
 	)
 	bridge.Start()
 
@@ -198,13 +202,19 @@ func (c *ActiveCall) StartRTPHandlers() {
 		c.g, gCtx = errgroup.WithContext(c.ctx)
 
 		c.g.Go(func() error {
-			rtp.StartReader(gCtx, c.log, c.RTPStream, c.JitterBuffer, c.NegotiatedStream, func() {
-				c.log.Warn("Media timeout triggered EndCall")
-				c.EndCall()
-			}, func(digit string, duration uint16, end bool) {
-				if end && c.AudioBridge != nil {
-					c.AudioBridge.BroadcastDTMF(digit, int(duration))
-				}
+			rtp.StartReader(gCtx, c.log, rtp.ReaderConfig{
+				Stream:       c.RTPStream,
+				JitterBuffer: c.JitterBuffer,
+				Info:         c.NegotiatedStream,
+				OnTimeout: func() {
+					c.log.Warn("Media timeout triggered EndCall")
+					c.EndCall()
+				},
+				OnDTMF: func(digit string, duration uint16, end bool) {
+					if end && c.AudioBridge != nil {
+						c.AudioBridge.BroadcastDTMF(digit, int(duration))
+					}
+				},
 			})
 			return nil
 		})
@@ -221,7 +231,14 @@ func (c *ActiveCall) StartRTPHandlers() {
 		}
 
 		c.g.Go(func() error {
-			rtp.StartWriter(gCtx, c.log, c.RTPStream, c.RemoteRTPAddr, c.NegotiatedStream, audioChan, c.dtmfSource, wsCodec)
+			rtp.StartWriter(gCtx, c.log, rtp.WriterConfig{
+				Stream:      c.RTPStream,
+				RemoteAddr:  c.RemoteRTPAddr,
+				Info:        c.NegotiatedStream,
+				AudioSource: audioChan,
+				DTMFSource:  c.dtmfSource,
+				WsCodec:     wsCodec,
+			})
 			return nil
 		})
 	})
